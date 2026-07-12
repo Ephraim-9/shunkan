@@ -1,0 +1,2 @@
+[workspace]
+members = ["shunkan-core", "shunkan-desktop", "shunkan-android"]
