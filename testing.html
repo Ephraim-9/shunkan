@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Plan — Project Shunkan (瞬間)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #080b11;
+            --bg-surface: #101622;
+            --bg-surface-hover: #161e2f;
+            --bg-glass: rgba(16, 22, 34, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(0, 229, 255, 0.3);
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent-cyan: #00e5ff;
+            --accent-indigo: #6366f1;
+            --accent-purple: #a855f7;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 85% 80%, rgba(0, 229, 255, 0.1) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 800;
+            font-size: 1.25rem;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: 900;
+            font-size: 1.1rem;
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+        }
+
+        nav ul {
+            display: flex;
+            list-style: none;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        nav a:hover {
+            color: var(--text-main);
+            background: var(--bg-surface-hover);
+        }
+
+        nav a.active {
+            color: var(--accent-cyan);
+            background: rgba(0, 229, 255, 0.1);
+            border-color: rgba(0, 229, 255, 0.2);
+            box-shadow: 0 0 12px rgba(0, 229, 255, 0.15);
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+            flex: 1;
+            width: 100%;
+        }
+
+        .page-header {
+            margin-bottom: 3rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-emerald);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            font-size: 2.75rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 1rem;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 800px;
+            font-weight: 400;
+        }
+
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.75rem;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.18);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-emerald), var(--accent-cyan));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .col-12 { grid-column: span 12; }
+        .col-8 { grid-column: span 8; }
+        .col-6 { grid-column: span 6; }
+        .col-4 { grid-column: span 4; }
+
+        @media (max-width: 900px) {
+            .col-8, .col-6, .col-4 { grid-column: span 12; }
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 1.25rem 0 0.5rem;
+            color: var(--accent-cyan);
+        }
+
+        p, li {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        ul, ol {
+            padding-left: 1.5rem;
+            margin-top: 0.5rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        li strong {
+            color: var(--text-main);
+        }
+
+        code {
+            font-family: 'Fira Code', monospace;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: var(--accent-cyan);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        pre {
+            background: #06090e;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 1.25rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.88rem;
+            color: #e2e8f0;
+            line-height: 1.5;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-top: 1rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.04);
+            padding: 1rem;
+            font-weight: 600;
+            color: var(--text-main);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-muted);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-main);
+        }
+
+        .test-case {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        .test-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .test-id {
+            font-weight: 700;
+            color: var(--text-main);
+            font-size: 1.05rem;
+        }
+
+        .test-status {
+            font-size: 0.72rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-pending { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
+        .status-passing { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
+        .status-planned { background: rgba(168, 85, 247, 0.15); color: var(--accent-purple); }
+
+        .cmd-box {
+            background: #06090e;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            font-size: 0.85rem;
+            margin-top: 0.75rem;
+        }
+
+        .cmd-label {
+            color: var(--accent-cyan);
+            font-weight: 600;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            margin-bottom: 0.35rem;
+            display: block;
+        }
+
+        footer {
+            border-top: 1px solid var(--border-color);
+            padding: 2rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: var(--bg-surface);
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <div class="logo-icon">瞬</div>
+        <span>Shunkan P2P Engine</span>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="prd.html">PRD</a></li>
+            <li><a href="stack.html">Tech Stack</a></li>
+            <li><a href="tasks.html">Roadmap &amp; Tasks</a></li>
+            <li><a href="research.html">OS Research</a></li>
+            <li><a href="memory.html">AI Memory Hub</a></li>
+            <li><a href="implementation_plan.html">Impl Plan</a></li>
+            <li><a href="learnings.html">Learnings</a></li>
+            <li><a href="testing.html" class="active">Testing</a></li>
+            <li><a href="usage.html">Usage</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="page-header">
+        <div class="badge">Document 8 of 9 • Test Plan &amp; Verification</div>
+        <h1>Test Plan &amp; Test Cases</h1>
+        <p class="subtitle">
+            A comprehensive test strategy covering unit tests, integration tests, platform-specific clipboard adapter tests, and Android instrumented tests with verification commands and expected outputs.
+        </p>
+    </div>
+
+    <!-- Quick Reference -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>⚡ Quick Test Commands</h2>
+            <p>Run these commands from the project root (<code>/shunkan</code>) to execute the full test suite:</p>
+            <pre><code># Run all workspace tests
+cargo test --workspace
+
+# Run only core library tests
+cargo test -p shunkan-core
+
+# Run with output (for debugging)
+cargo test -p shunkan-core -- --nocapture
+
+# Run a specific test
+cargo test -p shunkan-core --test test_mdns_peer_discovery -- --nocapture
+
+# Run clippy lint checks
+cargo clippy --workspace -- -D warnings
+
+# Run tests with coverage (requires cargo-llvm-cov)
+cargo llvm-cov --workspace --html</code></pre>
+        </div>
+    </div>
+
+    <!-- Unit Tests: Core Modules -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>🧪 Unit Tests — Core Modules (<code>shunkan-core</code>)</h2>
+            <p>Each core module has dedicated unit tests validating its public API and internal logic. Tests are located in <code>core/tests/</code> and inline <code>#[cfg(test)]</code> modules.</p>
+
+            <h3>Discovery Module (<code>discovery.rs</code>)</h3>
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">TC-101: mDNS Service Registration</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Verify that calling <code>register_service()</code> correctly advertises <code>_shunkan-sync._udp.local.</code> with hostname, OS type, and port 4433 in TXT records.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core test_mdns_service_registration -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> Service registered successfully. TXT record contains <code>os=Linux</code> and <code>port=4433</code>.</p>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">TC-102: mDNS Peer Discovery</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Start two <code>ServiceDaemon</code> instances on loopback. Verify that each discovers the other's service record within 2 seconds and emits <code>PeerDiscovered</code> events.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core --test test_mdns_peer_discovery -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> Both peers discovered. Event payloads contain correct hostname and IP address.</p>
+            </div>
+
+            <h3>Transport Module (<code>transport.rs</code>)</h3>
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">TC-201: QUIC Server Startup</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Verify that a QUIC server endpoint binds to <code>0.0.0.0:4433</code> with self-signed TLS cert and accepts incoming connections.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core test_quic_server_startup -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> Server bound. Logs show <code>QUIC endpoint listening on 0.0.0.0:4433</code>.</p>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">TC-202: QUIC Encrypted Handshake</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Spin up a server and client on loopback. Client connects with TLS 1.3, verify successful handshake and bidirectional stream opening.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core --test test_quic_encrypted_handshake -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> Handshake completes in &lt;100ms. Both sides can open streams. TLS version: 1.3.</p>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">TC-203: Multiplexed Stream Independence</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Open two concurrent streams — send a large payload on Stream 0 and a small payload on Stream 1. Verify Stream 1 completes before Stream 0 (no head-of-line blocking).</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core test_stream_multiplexing -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> Stream 1 (clipboard) completes in &lt;10ms while Stream 0 (file) is still transferring.</p>
+            </div>
+
+            <h3>Protocol Module (<code>protocol.rs</code>)</h3>
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">TC-301: Frame Serialization Round-Trip</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Serialize each message type (<code>ClipboardItem</code>, <code>FileChunkHeader</code>, <code>HandshakeRequest</code>) to bytes via <code>bincode</code>, then deserialize back. Assert field equality.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core test_frame_roundtrip -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> All frame types serialize and deserialize identically. No data loss.</p>
+            </div>
+
+            <h3>Crypto Module (<code>crypto.rs</code>)</h3>
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">TC-401: X25519 Key Exchange</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Generate two ephemeral key pairs. Perform Diffie-Hellman exchange. Verify both parties derive the same shared secret.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core test_x25519_key_exchange -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> <code>shared_secret_a == shared_secret_b</code>. 32 bytes length.</p>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">TC-402: PIN Code Generation &amp; Verification</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Generate a 6-digit PIN from the shared secret. Verify it matches on both sides and is always 6 digits (zero-padded).</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core test_pin_verification -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> PIN is 6 digits. Both peers compute identical PIN from shared secret.</p>
+            </div>
+
+            <h3>History Module (<code>history.rs</code>)</h3>
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">TC-501: SQLite Insert &amp; Retrieve</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Insert 10 clipboard items. Retrieve all and verify ordering (newest first). Verify BLAKE3 hash is computed and stored.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core test_history_insert_retrieve -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> 10 items stored. Retrieved in reverse-chronological order. Each has a 32-byte BLAKE3 hash.</p>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">TC-502: LRU Eviction</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Set LRU limit to 5. Insert 8 items. Verify only the 5 most recent remain and the oldest 3 are evicted.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core test_history_lru_eviction -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> Database contains exactly 5 entries. Oldest 3 entries deleted.</p>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">TC-503: BLAKE3 Deduplication</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Insert the same text twice. Verify only one entry exists (deduplicated by BLAKE3 hash). Timestamp should be updated.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core test_history_deduplication -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> Only 1 entry in database. Timestamp reflects the second insertion time.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Integration Tests -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>🔗 Integration Tests — Discovery + Transport</h2>
+            <p>End-to-end tests that verify the full flow: mDNS discovery → QUIC connection → clipboard sync → file transfer.</p>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">IT-001: Full Discovery-to-Clipboard Sync</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Start two Shunkan instances on loopback. Instance A discovers Instance B via mDNS. A sends a <code>ClipboardItem</code> to B over QUIC. B receives and stores it in history.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core --test integration_clipboard_sync -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> Clipboard text "Hello from Device A" appears in Device B's history within 50ms.</p>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">IT-002: File Transfer with BLAKE3 Verification</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Transfer a 10 MB test file between two loopback instances. Verify BLAKE3 chunk hashes match on both ends. Verify file content integrity byte-for-byte.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core --test test_large_file_quic_stream -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> File transferred successfully. All chunk BLAKE3 hashes match. Final file SHA matches source.</p>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">IT-003: Concurrent Clipboard + File Transfer</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Start a large file transfer on Stream 0. While it's in progress, send a clipboard item on Stream 1. Verify the clipboard item arrives immediately without waiting for the file transfer to complete.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p shunkan-core --test test_concurrent_streams -- --nocapture</code>
+                </div>
+                <p style="margin-top: 0.5rem;"><strong>Expected:</strong> Clipboard arrives in &lt;50ms. File transfer continues uninterrupted.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Desktop Tests -->
+    <div class="section-grid">
+        <div class="card col-6">
+            <h2>🐧 Desktop Clipboard Adapter Tests</h2>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">DT-001: Session Type Detection</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Verify <code>detect_session_type()</code> correctly reads <code>$XDG_SESSION_TYPE</code> and returns <code>X11</code>, <code>Wayland</code>, or <code>Unknown</code>.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p desktop-linux test_session_detection -- --nocapture</code>
+                </div>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">DT-002: Clipboard Read/Write (X11)</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>On an X11 session, write text to clipboard via <code>arboard</code>, read it back, verify content matches. Requires running X server.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p desktop-linux test_x11_clipboard_readwrite -- --nocapture</code>
+                </div>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">DT-003: Feedback Loop Prevention</span>
+                    <span class="test-status status-pending">Pending</span>
+                </div>
+                <p>Write a remote clipboard item with a hash nonce. Verify the listener skips re-broadcasting it (nonce matches last received payload).</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cargo test -p desktop-linux test_feedback_loop_prevention -- --nocapture</code>
+                </div>
+            </div>
+        </div>
+
+        <!-- Android Tests -->
+        <div class="card col-6">
+            <h2>📱 Android Instrumented Tests (Planned)</h2>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">AT-001: UniFFI Binding Smoke Test</span>
+                    <span class="test-status status-planned">Planned</span>
+                </div>
+                <p>Call <code>helloShunkan()</code> from Kotlin via UniFFI binding. Verify return value matches expected string from Rust.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cd mobile-android &amp;&amp; ./gradlew testDebugUnitTest</code>
+                </div>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">AT-002: TileService Toggle</span>
+                    <span class="test-status status-planned">Planned</span>
+                </div>
+                <p>Verify <code>ShunkanTileService</code> correctly toggles between active/inactive states and updates tile icon/subtitle.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cd mobile-android &amp;&amp; ./gradlew connectedAndroidTest</code>
+                </div>
+            </div>
+
+            <div class="test-case">
+                <div class="test-header">
+                    <span class="test-id">AT-003: ShareActivity Intent Handling</span>
+                    <span class="test-status status-planned">Planned</span>
+                </div>
+                <p>Send a mock <code>ACTION_SEND</code> intent with text data. Verify <code>ShareActivity</code> receives and queues it for QUIC transmission.</p>
+                <div class="cmd-box">
+                    <span class="cmd-label">Command</span>
+                    <code>cd mobile-android &amp;&amp; ./gradlew connectedAndroidTest --tests "*ShareActivityTest*"</code>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Summary Table -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>📊 Test Coverage Summary</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Module</th>
+                            <th>Test Count</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Primary Command</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>discovery.rs</code></td>
+                            <td>2</td>
+                            <td>Unit</td>
+                            <td><span class="test-status status-pending">Pending</span></td>
+                            <td><code>cargo test -p shunkan-core test_mdns</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>transport.rs</code></td>
+                            <td>3</td>
+                            <td>Unit</td>
+                            <td><span class="test-status status-pending">Pending</span></td>
+                            <td><code>cargo test -p shunkan-core test_quic</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>protocol.rs</code></td>
+                            <td>1</td>
+                            <td>Unit</td>
+                            <td><span class="test-status status-pending">Pending</span></td>
+                            <td><code>cargo test -p shunkan-core test_frame</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>crypto.rs</code></td>
+                            <td>2</td>
+                            <td>Unit</td>
+                            <td><span class="test-status status-pending">Pending</span></td>
+                            <td><code>cargo test -p shunkan-core test_x25519</code></td>
+                        </tr>
+                        <tr>
+                            <td><code>history.rs</code></td>
+                            <td>3</td>
+                            <td>Unit</td>
+                            <td><span class="test-status status-pending">Pending</span></td>
+                            <td><code>cargo test -p shunkan-core test_history</code></td>
+                        </tr>
+                        <tr>
+                            <td>Integration</td>
+                            <td>3</td>
+                            <td>Integration</td>
+                            <td><span class="test-status status-pending">Pending</span></td>
+                            <td><code>cargo test -p shunkan-core --test integration</code></td>
+                        </tr>
+                        <tr>
+                            <td>Desktop Linux</td>
+                            <td>3</td>
+                            <td>Platform</td>
+                            <td><span class="test-status status-pending">Pending</span></td>
+                            <td><code>cargo test -p desktop-linux</code></td>
+                        </tr>
+                        <tr>
+                            <td>Android</td>
+                            <td>3</td>
+                            <td>Instrumented</td>
+                            <td><span class="test-status status-planned">Planned</span></td>
+                            <td><code>./gradlew connectedAndroidTest</code></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer>
+    Project Shunkan Documentation Hub • Designed for Autonomous AI Development &amp; Iteration
+</footer>
+
+</body>
+</html>

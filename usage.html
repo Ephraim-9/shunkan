@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Usage, Deployment &amp; Installation Guide — Project Shunkan (瞬間)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #080b11;
+            --bg-surface: #101622;
+            --bg-surface-hover: #161e2f;
+            --bg-glass: rgba(16, 22, 34, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(0, 229, 255, 0.3);
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent-cyan: #00e5ff;
+            --accent-indigo: #6366f1;
+            --accent-purple: #a855f7;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 85% 80%, rgba(0, 229, 255, 0.1) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 800;
+            font-size: 1.25rem;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: 900;
+            font-size: 1.1rem;
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+        }
+
+        nav ul {
+            display: flex;
+            list-style: none;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        nav a:hover {
+            color: var(--text-main);
+            background: var(--bg-surface-hover);
+        }
+
+        nav a.active {
+            color: var(--accent-cyan);
+            background: rgba(0, 229, 255, 0.1);
+            border-color: rgba(0, 229, 255, 0.2);
+            box-shadow: 0 0 12px rgba(0, 229, 255, 0.15);
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+            flex: 1;
+            width: 100%;
+        }
+
+        .page-header {
+            margin-bottom: 3rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
+            background: rgba(0, 229, 255, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            font-size: 2.75rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 1rem;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 800px;
+            font-weight: 400;
+        }
+
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.75rem;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.18);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .col-12 { grid-column: span 12; }
+        .col-6 { grid-column: span 6; }
+        .col-4 { grid-column: span 4; }
+
+        @media (max-width: 900px) {
+            .col-6, .col-4 { grid-column: span 12; }
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 1.25rem 0 0.5rem;
+            color: var(--accent-cyan);
+        }
+
+        p, li {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        ul {
+            padding-left: 1.5rem;
+            margin-top: 0.5rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        code {
+            font-family: 'Fira Code', monospace;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: var(--accent-cyan);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        pre {
+            background: #06090e;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 1.25rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.88rem;
+            color: #e2e8f0;
+            line-height: 1.5;
+        }
+
+        .alert {
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+            margin: 1.25rem 0;
+            border: 1px solid transparent;
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+
+        .alert-info {
+            background: rgba(0, 229, 255, 0.08);
+            border-color: rgba(0, 229, 255, 0.25);
+            color: #a5f3fc;
+        }
+
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.08);
+            border-color: rgba(245, 158, 11, 0.25);
+            color: #fde68a;
+        }
+
+        footer {
+            border-top: 1px solid var(--border-color);
+            padding: 2rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: var(--bg-surface);
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <div class="logo-icon">瞬</div>
+        <span>Shunkan P2P Engine</span>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="prd.html">PRD</a></li>
+            <li><a href="stack.html">Tech Stack</a></li>
+            <li><a href="tasks.html">Roadmap</a></li>
+            <li><a href="research.html">OS Research</a></li>
+            <li><a href="memory.html">AI Memory Hub</a></li>
+            <li><a href="implementation_plan.html">Plan</a></li>
+            <li><a href="learnings.html">Learnings</a></li>
+            <li><a href="testing.html">Testing</a></li>
+            <li><a href="usage.html" class="active">Usage &amp; Deploy</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="page-header">
+        <div class="badge">Operations &amp; Packaging Manual • Version 0.1.0</div>
+        <h1>Usage, Deployment &amp; Installation Guide</h1>
+        <p class="subtitle">
+            Complete instructions on how to build, install, configure, troubleshoot, and package Project Shunkan across Linux desktop environments and Android mobile devices.
+        </p>
+    </div>
+
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>🛠️ Prerequisites &amp; Build Environment</h2>
+            <p>To compile Project Shunkan from source, ensure your development environment satisfies these minimum toolchain requirements:</p>
+            <div class="section-grid" style="margin-bottom: 0; gap: 1.25rem; margin-top: 1.25rem;">
+                <div class="card col-6" style="background: rgba(255, 255, 255, 0.02);">
+                    <h3>Linux Desktop Toolchain</h3>
+                    <ul>
+                        <li><strong>Rust Toolchain:</strong> <code>1.78+</code> via <a href="https://rustup.rs/" style="color:var(--accent-cyan);">rustup</a> (Edition 2021)</li>
+                        <li><strong>System Libraries (Debian/Ubuntu):</strong> <br><code>sudo apt install build-essential pkg-config libx11-dev libxcb1-dev libxkbcommon-dev libwayland-dev libssl-dev cmake</code></li>
+                        <li><strong>System Libraries (Fedora/RHEL):</strong> <br><code>sudo dnf install gcc gcc-c++ pkgconfig libX11-devel libxcb-devel libxkbcommon-devel wayland-devel openssl-devel cmake</code></li>
+                        <li><strong>System Libraries (Arch Linux):</strong> <br><code>sudo pacman -S base-devel pkgconf libx11 libxcb libxkbcommon wayland openssl cmake</code></li>
+                    </ul>
+                </div>
+                <div class="card col-6" style="background: rgba(255, 255, 255, 0.02);">
+                    <h3>Android Toolchain &amp; FFI</h3>
+                    <ul>
+                        <li><strong>JDK:</strong> OpenJDK 17 or higher</li>
+                        <li><strong>Android Studio &amp; SDK:</strong> API 34+ (Android 14) platform and Build Tools</li>
+                        <li><strong>Android NDK:</strong> NDK r26d+ for compiling native Rust libraries targeting <code>arm64-v8a</code> and <code>x86_64</code></li>
+                        <li><strong>Rust Android Targets:</strong> <br><code>rustup target add aarch64-linux-android x86_64-linux-android</code></li>
+                        <li><strong>cargo-ndk:</strong> <br><code>cargo install cargo-ndk</code></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="card col-12">
+            <h2>📦 Building from Source</h2>
+            <h3>1. Building the Linux Desktop Daemon &amp; UI</h3>
+            <p>From the project root directory, verify and compile all workspace members in release mode:</p>
+            <pre><code># 1. Run full test suite across core and desktop
+cargo test --workspace
+
+# 2. Build optimized release binaries
+cargo build --release --workspace
+
+# The compiled headless daemon binary will be located at:
+# ./target/release/shunkan-desktop</code></pre>
+            
+            <h3>2. Building the Android Native Library via UniFFI</h3>
+            <p>Compile the shared Rust core library into native Android shared objects (`libshunkan_core.so`) for mobile devices and emulators:</p>
+            <pre><code># Build for physical arm64 Android devices
+cargo ndk -t arm64-v8a -o mobile-android/app/src/main/jniLibs build --release -p shunkan-core
+
+# Build for x86_64 Android Studio emulators
+cargo ndk -t x86_64 -o mobile-android/app/src/main/jniLibs build --release -p shunkan-core
+
+# Assemble the Android APK using Gradle
+cd mobile-android && ./gradlew assembleDebug</code></pre>
+        </div>
+
+        <div class="card col-6">
+            <h2>🚀 Running the Application</h2>
+            <h3>Linux Desktop Daemon</h3>
+            <p>To run the daemon directly in your terminal with debug logging enabled:</p>
+            <pre><code>RUST_LOG=debug ./target/release/shunkan-desktop</code></pre>
+            <p>Upon startup, the daemon will automatically:</p>
+            <ul>
+                <li>Detect your display session (X11, Wayland wlroots, or GNOME Wayland).</li>
+                <li>Bind to UDP port <code>4433</code> for QUIC transport connections.</li>
+                <li>Advertise service <code>_shunkan-sync._udp.local.</code> via mDNS.</li>
+                <li>Monitor clipboard copy events and broadcast BLAKE3 hashes to paired peers.</li>
+            </ul>
+
+            <h3>Opening the Glassmorphic Command Palette</h3>
+            <p>To inspect the standalone webview UI during development without launching a full Tauri container, open the HTML bundle directly in your browser:</p>
+            <pre><code>xdg-open desktop-linux/src/index.html</code></pre>
+        </div>
+
+        <div class="card col-6">
+            <h2>⚙️ Configuration &amp; Firewall Rules</h2>
+            <p>Because Project Shunkan operates entirely on the local network without cloud relays (per <strong>INV-02</strong>), local system firewalls must allow multicast DNS and QUIC traffic.</p>
+            
+            <div class="alert alert-info" style="margin-top:1rem;">
+                <div>
+                    <strong>Required Network Ports:</strong><br>
+                    • <code>5353 / UDP</code> (mDNS Service Discovery)<br>
+                    • <code>4433 / UDP</code> (QUIC Encrypted Data Streams)
+                </div>
+            </div>
+
+            <h3>Configuring UFW (Ubuntu/Debian)</h3>
+            <pre><code>sudo ufw allow 5353/udp comment 'Shunkan mDNS Discovery'
+sudo ufw allow 4433/udp comment 'Shunkan QUIC Transport'
+sudo ufw reload</code></pre>
+
+            <h3>Configuring Firewalld (Fedora/RHEL)</h3>
+            <pre><code>sudo firewall-cmd --permanent --add-port=5353/udp
+sudo firewall-cmd --permanent --add-port=4433/udp
+sudo firewall-cmd --reload</code></pre>
+        </div>
+
+        <div class="card col-12">
+            <h2>🏷️ Packaging for Production &amp; Distribution</h2>
+            <p>Project Shunkan is packaged into standard platform formats for seamless deployment across distributions:</p>
+            
+            <div class="section-grid" style="margin-bottom:0; margin-top:1.25rem; gap:1.25rem;">
+                <div class="card col-4" style="background:rgba(255,255,255,0.02);">
+                    <h3>Debian Package (.deb)</h3>
+                    <p>Using `cargo-deb`:</p>
+                    <pre><code>cargo install cargo-deb
+cargo deb -p shunkan-desktop
+# Output: target/debian/shunkan-desktop_0.1.0_amd64.deb
+sudo dpkg -i target/debian/shunkan-desktop_0.1.0_amd64.deb</code></pre>
+                </div>
+                <div class="card col-4" style="background:rgba(255,255,255,0.02);">
+                    <h3>AppImage Portable Bundle</h3>
+                    <p>Using `cargo-appimage`:</p>
+                    <pre><code>cargo install cargo-appimage
+cargo appimage -p shunkan-desktop
+# Output: target/appimage/shunkan-desktop-x86_64.AppImage
+chmod +x target/appimage/*.AppImage</code></pre>
+                </div>
+                <div class="card col-4" style="background:rgba(255,255,255,0.02);">
+                    <h3>Android APK Package</h3>
+                    <p>Using Gradle Wrapper:</p>
+                    <pre><code>cd mobile-android
+# Build signed/unsigned release bundle
+./gradlew assembleRelease
+# Output: app/build/outputs/apk/release/app-release-unsigned.apk</code></pre>
+                </div>
+            </div>
+        </div>
+
+        <div class="card col-12">
+            <h2>❓ Troubleshooting &amp; FAQ</h2>
+            <div style="margin-top: 1rem;">
+                <div style="margin-bottom: 1.5rem;">
+                    <h3 style="color:var(--accent-amber); margin-top:0;">Q: Peers are not discovering each other across my Wi-Fi network</h3>
+                    <p><strong>Diagnosis:</strong> Your router or AP may block UDP Multicast (mDNS), or your system firewall has dropped port <code>5353/udp</code>.</p>
+                    <p><strong>Solution:</strong> Verify multicast is enabled by running <code>avahi-browse -rt _shunkan-sync._udp</code> on Linux. Ensure your firewall rules above are applied. If client isolation is enabled on guest Wi-Fi networks, connect both devices to the same trusted LAN subnet.</p>
+                </div>
+                <div style="margin-bottom: 1.5rem;">
+                    <h3 style="color:var(--accent-amber); margin-top:0;">Q: Clipboard history copies in an infinite loop on X11</h3>
+                    <p><strong>Diagnosis:</strong> A misbehaved X11 clipboard manager is rewriting the clipboard ownership without modifying the content.</p>
+                    <p><strong>Solution:</strong> Shunkan implements BLAKE3 hash deduplication (<strong>INV-05</strong>) to break feedback loops. Ensure you are running version <code>0.1.0+</code> where `last_written_hash` and `last_hash` guards are active in `clipboard.rs`.</p>
+                </div>
+                <div>
+                    <h3 style="color:var(--accent-amber); margin-top:0;">Q: TLS Certificate validation fails on initial connection</h3>
+                    <p><strong>Diagnosis:</strong> Because Shunkan generates ephemeral self-signed certificates via `rcgen`, standard root CA checks must be bypassed in favor of PIN hash pinning.</p>
+                    <p><strong>Solution:</strong> Ensure your QUIC client configuration uses the custom `rustls::ClientConfig` returned by `crypto::generate_quinn_configs()`, which includes the self-signed certificate in its explicit root store.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer>
+    Project Shunkan Documentation Hub • Designed for Autonomous AI Development &amp; Iteration
+</footer>
+
+</body>
+</html>

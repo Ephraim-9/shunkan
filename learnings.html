@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Learnings &amp; Errors — Project Shunkan (瞬間)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #080b11;
+            --bg-surface: #101622;
+            --bg-surface-hover: #161e2f;
+            --bg-glass: rgba(16, 22, 34, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(0, 229, 255, 0.3);
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent-cyan: #00e5ff;
+            --accent-indigo: #6366f1;
+            --accent-purple: #a855f7;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 85% 80%, rgba(0, 229, 255, 0.1) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 800;
+            font-size: 1.25rem;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: 900;
+            font-size: 1.1rem;
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+        }
+
+        nav ul {
+            display: flex;
+            list-style: none;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        nav a:hover {
+            color: var(--text-main);
+            background: var(--bg-surface-hover);
+        }
+
+        nav a.active {
+            color: var(--accent-cyan);
+            background: rgba(0, 229, 255, 0.1);
+            border-color: rgba(0, 229, 255, 0.2);
+            box-shadow: 0 0 12px rgba(0, 229, 255, 0.15);
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+            flex: 1;
+            width: 100%;
+        }
+
+        .page-header {
+            margin-bottom: 3rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
+            background: rgba(244, 63, 94, 0.15);
+            color: var(--accent-rose);
+            border: 1px solid rgba(244, 63, 94, 0.3);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            font-size: 2.75rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 1rem;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 800px;
+            font-weight: 400;
+        }
+
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.75rem;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.18);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-rose), var(--accent-amber));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .col-12 { grid-column: span 12; }
+        .col-6 { grid-column: span 6; }
+        .col-4 { grid-column: span 4; }
+
+        @media (max-width: 900px) {
+            .col-6, .col-4 { grid-column: span 12; }
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 1.25rem 0 0.5rem;
+            color: var(--accent-cyan);
+        }
+
+        p, li {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        ul, ol {
+            padding-left: 1.5rem;
+            margin-top: 0.5rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        li strong {
+            color: var(--text-main);
+        }
+
+        code {
+            font-family: 'Fira Code', monospace;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: var(--accent-cyan);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        pre {
+            background: #06090e;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 1.25rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.88rem;
+            color: #e2e8f0;
+            line-height: 1.5;
+        }
+
+        .learning-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+        }
+
+        .learning-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .learning-title {
+            font-weight: 700;
+            color: var(--text-main);
+            font-size: 1.05rem;
+        }
+
+        .severity-tag {
+            font-size: 0.72rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .severity-critical { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); }
+        .severity-warning { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
+        .severity-info { background: rgba(0, 229, 255, 0.15); color: var(--accent-cyan); }
+        .severity-resolved { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
+
+        .callout-warning {
+            background: rgba(245, 158, 11, 0.08);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin: 1rem 0;
+        }
+
+        .callout-warning h4 {
+            color: var(--accent-amber);
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 0.35rem;
+        }
+
+        .callout-success {
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin: 1rem 0;
+        }
+
+        .callout-success h4 {
+            color: var(--accent-emerald);
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 0.35rem;
+        }
+
+        footer {
+            border-top: 1px solid var(--border-color);
+            padding: 2rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: var(--bg-surface);
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <div class="logo-icon">瞬</div>
+        <span>Shunkan P2P Engine</span>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="prd.html">PRD</a></li>
+            <li><a href="stack.html">Tech Stack</a></li>
+            <li><a href="tasks.html">Roadmap &amp; Tasks</a></li>
+            <li><a href="research.html">OS Research</a></li>
+            <li><a href="memory.html">AI Memory Hub</a></li>
+            <li><a href="implementation_plan.html">Impl Plan</a></li>
+            <li><a href="learnings.html" class="active">Learnings</a></li>
+            <li><a href="testing.html">Testing</a></li>
+            <li><a href="usage.html">Usage</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="page-header">
+        <div class="badge">Document 7 of 9 • Learnings &amp; Error Log</div>
+        <h1>Learnings, Errors &amp; Hard-Won Knowledge</h1>
+        <p class="subtitle">
+            A living record of technical pitfalls, crate compatibility issues, and architectural lessons encountered during Project Shunkan development. Future AI agents must consult this before starting work.
+        </p>
+    </div>
+
+    <!-- Crate Version Compatibility -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>📦 Crate Version Compatibility Issues</h2>
+            <p>The Rust ecosystem evolves rapidly — pinning compatible crate versions across the <code>quinn</code> + <code>rustls</code> + <code>rcgen</code> dependency chain is critical to avoid compile failures.</p>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">quinn + rustls Version Matrix</span>
+                    <span class="severity-tag severity-critical">Critical</span>
+                </div>
+                <p><code>quinn</code> depends on specific <code>rustls</code> major versions. Mixing <code>quinn 0.11.x</code> with <code>rustls 0.23.x</code> may cause trait incompatibility errors because <code>quinn</code> re-exports its own <code>rustls</code> types.</p>
+                <div class="callout-warning">
+                    <h4>⚠️ Error Pattern</h4>
+                    <p style="color: #cbd5e1;"><code>error[E0308]: mismatched types — expected rustls::ServerConfig, found rustls::ServerConfig</code><br>This occurs when two different versions of <code>rustls</code> are compiled — one from <code>quinn</code>'s dependency tree and one from your direct <code>Cargo.toml</code>.</p>
+                </div>
+                <div class="callout-success">
+                    <h4>✅ Resolution</h4>
+                    <p style="color: #cbd5e1;">Always use the <code>rustls</code> version that <code>quinn</code> re-exports. Check with <code>cargo tree -i rustls</code> and match your direct dependency. For <code>quinn 0.11.x</code>, use <code>rustls = { version = "0.23", features = ["ring"] }</code>. Import <code>rustls</code> types via <code>quinn::rustls</code> when possible.</p>
+                </div>
+            </div>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">rcgen Certificate Generation Compatibility</span>
+                    <span class="severity-tag severity-warning">Warning</span>
+                </div>
+                <p><code>rcgen</code> is used to generate self-signed TLS certificates for QUIC endpoints. Newer versions of <code>rcgen</code> changed their API — <code>Certificate::from_params()</code> was replaced with <code>CertificateParams::self_signed()</code>.</p>
+                <div class="callout-success">
+                    <h4>✅ Resolution</h4>
+                    <p style="color: #cbd5e1;">Pin <code>rcgen</code> to a version compatible with your <code>rustls</code>. For <code>rustls 0.23.x</code> with <code>ring</code> backend, use <code>rcgen = "0.13"</code>. Always check <code>rcgen</code>'s changelog for API migration guides when upgrading.</p>
+                </div>
+            </div>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">rustls CryptoProvider Initialization</span>
+                    <span class="severity-tag severity-warning">Warning</span>
+                </div>
+                <p>Starting with <code>rustls 0.22+</code>, you must explicitly install a crypto provider before creating TLS configs. Without this, <code>ServerConfig::builder()</code> panics at runtime.</p>
+                <pre><code>// Required at startup before any TLS operations:
+rustls::crypto::ring::default_provider()
+    .install_default()
+    .expect("Failed to install rustls crypto provider");</code></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Workspace Configuration -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>🏗️ Workspace Configuration Errors</h2>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">Missing Cargo.toml for Workspace Members</span>
+                    <span class="severity-tag severity-critical">Critical</span>
+                </div>
+                <p>When defining a Cargo workspace with <code>[workspace] members = ["core"]</code> in the root <code>Cargo.toml</code>, the referenced directory <strong>must</strong> contain its own <code>Cargo.toml</code> with <code>[package]</code> metadata. A missing or empty member <code>Cargo.toml</code> causes:</p>
+                <pre><code>error: failed to load manifest for workspace member `core`
+Caused by: failed to read `/path/to/core/Cargo.toml`</code></pre>
+                <div class="callout-success">
+                    <h4>✅ Resolution</h4>
+                    <p style="color: #cbd5e1;">Always create the member <code>Cargo.toml</code> with at minimum <code>[package]</code> name, version, and edition fields before adding it to the workspace. Use <code>cargo init core --lib</code> to scaffold correctly.</p>
+                </div>
+            </div>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">Virtual Workspace vs Package Workspace</span>
+                    <span class="severity-tag severity-info">Info</span>
+                </div>
+                <p>A root <code>Cargo.toml</code> with only <code>[workspace]</code> (no <code>[package]</code>) is a "virtual workspace." You cannot run <code>cargo build</code> at the root without specifying <code>-p &lt;package&gt;</code> unless you add <code>default-members</code>. If the root also has a <code>[package]</code>, it's a "package workspace" and the root itself is implicitly a member.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- API Changes -->
+    <div class="section-grid">
+        <div class="card col-6">
+            <h2>🔄 API Changes Between Crate Versions</h2>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">quinn Endpoint API Evolution</span>
+                    <span class="severity-tag severity-info">Info</span>
+                </div>
+                <p>The <code>quinn::Endpoint</code> API changed significantly between 0.10 and 0.11:</p>
+                <ul>
+                    <li><code>Endpoint::server()</code> → <code>Endpoint::new()</code> with separate <code>ServerConfig</code></li>
+                    <li><code>Endpoint::connect()</code> now requires explicit <code>ClientConfig</code></li>
+                    <li>Connection handling switched from <code>NewConnection</code> struct to direct <code>Connection</code> return</li>
+                </ul>
+            </div>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">x25519-dalek API Changes</span>
+                    <span class="severity-tag severity-info">Info</span>
+                </div>
+                <p><code>x25519-dalek 2.x</code> renamed <code>EphemeralSecret</code> constructor from <code>::new()</code> to <code>::random_from_rng()</code> and requires explicit RNG parameter instead of relying on <code>OsRng</code> default.</p>
+            </div>
+        </div>
+
+        <!-- mDNS Library Selection -->
+        <div class="card col-6">
+            <h2>🔍 mDNS Library Selection</h2>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title"><code>mdns</code> vs <code>mdns-sd</code> — Why We Chose <code>mdns-sd</code></span>
+                    <span class="severity-tag severity-resolved">Resolved</span>
+                </div>
+                <p>Two Rust mDNS crates exist with very different maturity levels:</p>
+                <ul>
+                    <li><strong><code>mdns</code> crate:</strong> Minimal, query-only — cannot advertise/register services. Only discovers existing mDNS records. Insufficient for Shunkan's bidirectional discovery requirement.</li>
+                    <li><strong><code>mdns-sd</code> crate:</strong> Full DNS-SD implementation supporting both service registration (advertising) and browsing (discovery). Supports TXT records for metadata (hostname, OS type). Actively maintained with async support.</li>
+                </ul>
+                <div class="callout-success">
+                    <h4>✅ Decision</h4>
+                    <p style="color: #cbd5e1;">Selected <code>mdns-sd</code> for bidirectional service discovery. Each Shunkan device both registers its own <code>_shunkan-sync._udp.local.</code> service record and browses for peers. The <code>mdns</code> crate would have required a second library for service registration.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Directory Restructuring -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>📁 Directory Structure Restructuring</h2>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title"><code>shunkan-core/</code> → <code>core/</code> Rename</span>
+                    <span class="severity-tag severity-resolved">Resolved</span>
+                </div>
+                <p>The initial plan used <code>shunkan-core/</code> as the directory name for the shared Rust library. This was restructured to <code>core/</code> for brevity and consistency with Rust workspace conventions.</p>
+                <ul>
+                    <li><strong>Before:</strong> <code>shunkan-core/Cargo.toml</code> with <code>name = "shunkan-core"</code></li>
+                    <li><strong>After:</strong> <code>core/Cargo.toml</code> with <code>name = "shunkan-core"</code></li>
+                    <li><strong>Impact:</strong> All workspace member references, import paths, and documentation updated. The crate name in <code>Cargo.toml</code> remains <code>shunkan-core</code> for <code>cargo test -p shunkan-core</code> compatibility.</li>
+                </ul>
+            </div>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">Workspace Root Cargo.toml Setup</span>
+                    <span class="severity-tag severity-info">Info</span>
+                </div>
+                <p>The project uses a virtual workspace pattern where the root <code>Cargo.toml</code> defines workspace members but is not itself a package:</p>
+                <pre><code># /shunkan/Cargo.toml (workspace root)
+[workspace]
+members = ["core"]
+resolver = "2"</code></pre>
+                <p style="margin-top: 0.5rem;">This ensures <code>cargo build --workspace</code> compiles all members and shared dependencies are deduplicated across the lockfile.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Lessons -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>💡 Additional Lessons Learned</h2>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">Tokio Runtime in Library Crates</span>
+                    <span class="severity-tag severity-info">Info</span>
+                </div>
+                <p><code>shunkan-core</code> is a library crate — it must <strong>not</strong> include <code>#[tokio::main]</code> or create its own Tokio runtime. The runtime is owned by the application layer (Tauri on Linux, Android's coroutine scope via UniFFI). The core library exposes <code>async fn</code> that the caller drives.</p>
+            </div>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">BLAKE3 vs SHA-256 Performance Difference</span>
+                    <span class="severity-tag severity-resolved">Resolved</span>
+                </div>
+                <p>Early prototyping confirmed that SHA-256 hashing of 64 KB chunks becomes CPU-bound at Wi-Fi 6 speeds (>100 MB/s). BLAKE3's SIMD-accelerated implementation (<code>blake3</code> crate) achieves 15–20 GB/s — ensuring the hash computation is never the bottleneck during file transfers. This validated ADR-003.</p>
+            </div>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">Self-Signed Certificates &amp; quinn</span>
+                    <span class="severity-tag severity-warning">Warning</span>
+                </div>
+                <p>QUIC (via <code>quinn</code>) requires valid TLS certificates. For P2P local-network use, self-signed certificates generated by <code>rcgen</code> are used. The client must configure <code>ClientConfig</code> to accept these by implementing a custom <code>ServerCertVerifier</code> or using <code>danger_config</code> in development. For production, implement proper certificate pinning using the exchanged peer public keys.</p>
+            </div>
+
+            <div class="learning-card">
+                <div class="learning-header">
+                    <span class="learning-title">Firewall Rules for mDNS + QUIC</span>
+                    <span class="severity-tag severity-info">Info</span>
+                </div>
+                <p>On Linux systems with <code>ufw</code> or <code>firewalld</code> enabled, both mDNS (UDP 5353) and QUIC (UDP 4433) must be explicitly allowed. Without this, peer discovery and transport silently fail with no error messages — making debugging extremely difficult.</p>
+                <pre><code># Required firewall rules:
+sudo ufw allow 5353/udp   # mDNS multicast discovery
+sudo ufw allow 4433/udp   # QUIC transport</code></pre>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer>
+    Project Shunkan Documentation Hub • Designed for Autonomous AI Development &amp; Iteration
+</footer>
+
+</body>
+</html>

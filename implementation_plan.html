@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Implementation Plan — Project Shunkan (瞬間)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #080b11;
+            --bg-surface: #101622;
+            --bg-surface-hover: #161e2f;
+            --bg-glass: rgba(16, 22, 34, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(0, 229, 255, 0.3);
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent-cyan: #00e5ff;
+            --accent-indigo: #6366f1;
+            --accent-purple: #a855f7;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 85% 80%, rgba(0, 229, 255, 0.1) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        /* Top Navigation */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 800;
+            font-size: 1.25rem;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: 900;
+            font-size: 1.1rem;
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+        }
+
+        nav ul {
+            display: flex;
+            list-style: none;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        nav a:hover {
+            color: var(--text-main);
+            background: var(--bg-surface-hover);
+        }
+
+        nav a.active {
+            color: var(--accent-cyan);
+            background: rgba(0, 229, 255, 0.1);
+            border-color: rgba(0, 229, 255, 0.2);
+            box-shadow: 0 0 12px rgba(0, 229, 255, 0.15);
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+            flex: 1;
+            width: 100%;
+        }
+
+        .page-header {
+            margin-bottom: 3rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent-indigo);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            font-size: 2.75rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 1rem;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 800px;
+            font-weight: 400;
+        }
+
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.75rem;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.18);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-indigo));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .col-12 { grid-column: span 12; }
+        .col-8 { grid-column: span 8; }
+        .col-6 { grid-column: span 6; }
+        .col-4 { grid-column: span 4; }
+
+        @media (max-width: 900px) {
+            .col-8, .col-6, .col-4 { grid-column: span 12; }
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 1.25rem 0 0.5rem;
+            color: var(--accent-cyan);
+        }
+
+        p, li {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        ul, ol {
+            padding-left: 1.5rem;
+            margin-top: 0.5rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        li strong {
+            color: var(--text-main);
+        }
+
+        code {
+            font-family: 'Fira Code', monospace;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: var(--accent-cyan);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        pre {
+            background: #06090e;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 1.25rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.88rem;
+            color: #e2e8f0;
+            line-height: 1.5;
+        }
+
+        .phase-header {
+            margin: 2.5rem 0 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.75rem;
+        }
+
+        .phase-title {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .phase-badge {
+            font-size: 0.75rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent-indigo);
+            font-weight: 600;
+        }
+
+        .milestone-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .milestone-item h4 {
+            color: var(--text-main);
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.35rem;
+        }
+
+        .milestone-item p {
+            font-size: 0.9rem;
+        }
+
+        .status-tag {
+            font-size: 0.72rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .tag-planned { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
+        .tag-active { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
+        .tag-done { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
+
+        .callout-info {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-top: 1.5rem;
+        }
+
+        .callout-info h4 {
+            color: var(--accent-purple);
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 0.35rem;
+        }
+
+        .deviation-empty {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px dashed rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-top: 1rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.04);
+            padding: 1rem;
+            font-weight: 600;
+            color: var(--text-main);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-muted);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-main);
+        }
+
+        footer {
+            border-top: 1px solid var(--border-color);
+            padding: 2rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: var(--bg-surface);
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <div class="logo-icon">瞬</div>
+        <span>Shunkan P2P Engine</span>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="prd.html">PRD</a></li>
+            <li><a href="stack.html">Tech Stack</a></li>
+            <li><a href="tasks.html">Roadmap &amp; Tasks</a></li>
+            <li><a href="research.html">OS Research</a></li>
+            <li><a href="memory.html">AI Memory Hub</a></li>
+            <li><a href="implementation_plan.html" class="active">Impl Plan</a></li>
+            <li><a href="learnings.html">Learnings</a></li>
+            <li><a href="testing.html">Testing</a></li>
+            <li><a href="usage.html">Usage</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="page-header">
+        <div class="badge">Document 6 of 9 • Implementation Plan</div>
+        <h1>Complete Implementation Plan</h1>
+        <p class="subtitle">
+            A phased, end-to-end blueprint covering the entire lifecycle from core Rust library development through CI/CD pipelines and multi-format packaging.
+        </p>
+    </div>
+
+    <!-- Phase 1 -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <div class="phase-header" style="margin-top:0;">
+                <div class="phase-title">🦀 Phase 1: Core Rust Library (<code>shunkan-core</code>)</div>
+                <span class="phase-badge">Foundation</span>
+            </div>
+            <p>Build the shared P2P engine as a pure Rust crate. All networking, cryptography, protocol, and history logic lives here — zero platform-specific UI code.</p>
+
+            <h3>1.1 — Discovery Module (<code>discovery.rs</code>)</h3>
+            <div class="milestone-item">
+                <h4>mDNS-SD Broadcasting &amp; Listening</h4>
+                <p>Integrate <code>mdns-sd</code> and <code>local-ip-address</code> crates. Advertise <code>_shunkan-sync._udp.local.</code> service records containing hostname, OS type, and QUIC port (<code>4433/udp</code>). Build an async background listener that emits <code>PeerDiscovered</code> / <code>PeerLost</code> events via <code>tokio::sync::broadcast</code>.</p>
+            </div>
+
+            <h3>1.2 — Transport Module (<code>transport.rs</code>)</h3>
+            <div class="milestone-item">
+                <h4>QUIC Server &amp; Client Endpoints</h4>
+                <p>Setup <code>quinn</code> server and client endpoints with <code>rustls</code> self-signed TLS 1.3 certificates generated via <code>rcgen</code>. Implement multiplexed stream management — <code>Stream 0</code> for file transfers, <code>Stream 1+</code> for lightweight clipboard events. Support 0-RTT reconnection for paired devices.</p>
+            </div>
+
+            <h3>1.3 — Protocol Module (<code>protocol.rs</code>)</h3>
+            <div class="milestone-item">
+                <h4>Message Frame Definitions</h4>
+                <p>Define typed message frames using <code>serde</code> + <code>bincode</code>: <code>ClipboardItem</code> (text/rich-text/small-image), <code>FileChunkHeader</code>, <code>FileChunkData</code>, <code>HandshakeRequest</code>, <code>HandshakeResponse</code>, <code>PeerStatus</code>. All frames include a 4-byte length prefix and a frame-type discriminator byte.</p>
+            </div>
+
+            <h3>1.4 — Crypto Module (<code>crypto.rs</code>)</h3>
+            <div class="milestone-item">
+                <h4>X25519 Key Exchange &amp; PIN Verification</h4>
+                <p>Implement Diffie-Hellman ephemeral key exchange using <code>x25519-dalek</code>. Generate 6-digit PIN codes for first-time pairing. Store mutual peer public keys and TLS certificates in local persistent storage (<code>directories</code> crate for platform-appropriate paths).</p>
+            </div>
+
+            <h3>1.5 — Hashing (<code>transport.rs</code> integration)</h3>
+            <div class="milestone-item">
+                <h4>BLAKE3 Integrity Verification</h4>
+                <p>Use the <code>blake3</code> crate for all file chunk integrity verification. Per <strong>INV-05</strong>, SHA-256 is prohibited — BLAKE3 achieves 15–20 GB/s via SIMD. Implement rolling hash nonces for clipboard deduplication to prevent feedback loops.</p>
+            </div>
+
+            <h3>1.6 — History Module (<code>history.rs</code>)</h3>
+            <div class="milestone-item">
+                <h4>SQLite LRU Clipboard History</h4>
+                <p>Integrate <code>rusqlite</code> for persistent clipboard history with LRU eviction (default: 500 items). Support full-text search via SQLite FTS5. BLAKE3 hash deduplication prevents storing identical items.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 2 -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <div class="phase-header" style="margin-top:0;">
+                <div class="phase-title">🐧 Phase 2: Desktop Linux Application</div>
+                <span class="phase-badge">Desktop UI</span>
+            </div>
+            <p>Build the Linux desktop frontend using Tauri v2 — a lightweight system tray daemon with a glassmorphic clipboard history command palette.</p>
+
+            <h3>2.1 — Tauri v2 Daemon &amp; System Tray</h3>
+            <div class="milestone-item">
+                <h4>Background Daemon Bootstrap</h4>
+                <p>Create Tauri v2 project under <code>desktop-linux/</code>. Configure <code>tauri-plugin-system-tray</code> to run headless on boot, display connection status in the system tray, and embed <code>shunkan-core</code> as a background Tokio runtime thread. Target: &lt;15MB idle RAM (hard ceiling: &lt;20MB per INV-01).</p>
+            </div>
+
+            <h3>2.2 — Multi-Session Clipboard Adapter</h3>
+            <div class="milestone-item">
+                <h4>Wayland + X11 Clipboard Listener</h4>
+                <p>Auto-detect <code>$XDG_SESSION_TYPE</code> at startup. <strong>X11:</strong> Use <code>arboard</code> polling at ~100ms for <code>CLIPBOARD</code> and <code>PRIMARY</code> atoms. <strong>Wayland (wlroots):</strong> Use <code>wl-clipboard-rs</code> via <code>ext-data-control-v1</code>. <strong>GNOME Wayland:</strong> <code>wl-paste --watch</code>-equivalent loop + <code>xdg-desktop-portal-gnome</code> authorization.</p>
+            </div>
+
+            <h3>2.3 — Glassmorphic Command Palette UI</h3>
+            <div class="milestone-item">
+                <h4>Hotkey-Activated History Popup</h4>
+                <p>Register <code>Super + V</code> via <code>tauri-plugin-global-shortcut</code>. Display a floating, searchable clipboard history window with glassmorphic CSS. On item selection: <strong>X11</strong> — inject <code>Ctrl+V</code> via <code>enigo</code> (Xtest); <strong>wlroots</strong> — use <code>wtype</code> (<code>virtual-keyboard-v1</code>); <strong>GNOME</strong> — clipboard-write + toast notification.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 3 -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <div class="phase-header" style="margin-top:0;">
+                <div class="phase-title">📱 Phase 3: Android Mobile Application</div>
+                <span class="phase-badge">Mobile UI</span>
+            </div>
+            <p>Build a native Kotlin + Jetpack Compose Android app that embeds <code>libshunkan_core.so</code> via UniFFI, with system-level OS hooks for seamless clipboard and file sharing.</p>
+
+            <h3>3.1 — Android Studio Project Setup</h3>
+            <div class="milestone-item">
+                <h4>NDK Integration &amp; UniFFI Bindings</h4>
+                <p>Configure <code>build.gradle.kts</code> with NDK support. Cross-compile <code>libshunkan_core.so</code> for <code>arm64-v8a</code> and <code>x86_64</code> targets using <code>cargo-ndk</code>. Integrate auto-generated UniFFI Kotlin bindings into <code>com.shunkan.sync.core</code>.</p>
+            </div>
+
+            <h3>3.2 — Quick Settings TileService</h3>
+            <div class="milestone-item">
+                <h4>One-Tap Clipboard Sync</h4>
+                <p>Implement <code>ShunkanTileService</code> extending <code>android.service.quicksettings.TileService</code>. When tapped, fetch the latest clipboard item from paired Linux devices or push the current Android clipboard to Linux — all within the privileged tile context.</p>
+            </div>
+
+            <h3>3.3 — ShareActivity &amp; Direct Share Target</h3>
+            <div class="milestone-item">
+                <h4>System Share Sheet Integration</h4>
+                <p>Register <code>ACTION_SEND</code> / <code>ACTION_SEND_MULTIPLE</code> intent filters. Implement <code>ShortcutManager.pushDynamicShortcut()</code> so paired Linux devices appear in the Direct Share top row. Stream shared text/files immediately over QUIC.</p>
+            </div>
+
+            <h3>3.4 — Optional Custom Keyboard (ShunkanIME)</h3>
+            <div class="milestone-item">
+                <h4>True Background Auto-Capture</h4>
+                <p>Implement lightweight <code>InputMethodService</code> with <code>ClipboardManager.OnPrimaryClipChangedListener</code>. For power users: optional Shizuku privilege elevation (<code>appops set com.shunkan.sync READ_CLIPBOARD allow</code>). <strong>Never use <code>AccessibilityService</code></strong> — prohibited by Play Store policy.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 4 -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <div class="phase-header" style="margin-top:0;">
+                <div class="phase-title">📦 Phase 4: File Streaming Engine</div>
+                <span class="phase-badge">Performance</span>
+            </div>
+            <p>Implement high-speed chunked file transfer over QUIC with BLAKE3 integrity verification.</p>
+
+            <h3>4.1 — Chunked QUIC Transfer Protocol</h3>
+            <div class="milestone-item">
+                <h4>64 KB Chunk Streaming with BLAKE3</h4>
+                <p>Stream binary files in 64 KB chunks over dedicated QUIC streams. Each chunk includes a BLAKE3 rolling hash for real-time integrity verification. Implement Merkle-tree chunked verification for resumable integrity checks. Broadcast transfer progress events to UI layers.</p>
+            </div>
+
+            <h3>4.2 — Auto-Resume &amp; Error Recovery</h3>
+            <div class="milestone-item">
+                <h4>Resumable Transfers</h4>
+                <p>If Wi-Fi drops mid-transfer, persist the last acknowledged chunk offset. On reconnection (QUIC 0-RTT), resume from the exact byte offset. Save received files to <code>$HOME/Downloads/Shunkan</code> on Linux and <code>Documents/Shunkan</code> on Android.</p>
+            </div>
+
+            <h3>4.3 — Drag-and-Drop &amp; File Picker Integration</h3>
+            <div class="milestone-item">
+                <h4>Platform-Native File Selection</h4>
+                <p>Linux: Tauri drag-and-drop event handlers. Android: <code>Intent.ACTION_OPEN_DOCUMENT</code> file picker and Share Sheet file receiver. Display real-time progress bars with speed metrics (MB/s).</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 5 -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <div class="phase-header" style="margin-top:0;">
+                <div class="phase-title">🧪 Phase 5: Testing</div>
+                <span class="phase-badge">Quality</span>
+            </div>
+            <p>Comprehensive test coverage across all modules and platforms. See <a href="testing.html" style="color: var(--accent-cyan);">testing.html</a> for the full test plan.</p>
+
+            <h3>5.1 — Unit Tests</h3>
+            <div class="milestone-item">
+                <h4>Core Module Unit Tests</h4>
+                <p>Unit tests for each <code>shunkan-core</code> module: <code>discovery.rs</code>, <code>transport.rs</code>, <code>protocol.rs</code>, <code>crypto.rs</code>, <code>history.rs</code>. Target: &gt;80% code coverage. Run via <code>cargo test -p shunkan-core</code>.</p>
+            </div>
+
+            <h3>5.2 — Integration Tests</h3>
+            <div class="milestone-item">
+                <h4>Cross-Module &amp; Network Tests</h4>
+                <p>Integration tests combining discovery → handshake → clipboard sync → file transfer in a single test harness. Uses loopback interfaces (<code>127.0.0.1</code>) for deterministic network testing.</p>
+            </div>
+
+            <h3>5.3 — Platform Tests</h3>
+            <div class="milestone-item">
+                <h4>Desktop &amp; Mobile Verification</h4>
+                <p>Desktop Linux clipboard adapter tests under both X11 and Wayland sessions. Android instrumented tests via <code>./gradlew connectedAndroidTest</code> for TileService, ShareActivity, and UniFFI binding validation.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 6 -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <div class="phase-header" style="margin-top:0;">
+                <div class="phase-title">🔄 Phase 6: CI/CD Pipeline</div>
+                <span class="phase-badge">Automation</span>
+            </div>
+            <p>GitHub Actions workflow for continuous integration, testing, and release artifact building.</p>
+
+            <h3>6.1 — GitHub Actions CI</h3>
+            <div class="milestone-item">
+                <h4>Automated Lint, Test &amp; Build</h4>
+                <p>Trigger on push/PR to <code>main</code>. Jobs: <strong>lint</strong> (<code>cargo clippy -- -D warnings</code>), <strong>test</strong> (<code>cargo test --workspace</code>), <strong>build-linux</strong> (<code>cargo build --release</code>). Cache <code>~/.cargo/registry</code> and <code>target/</code> directory for fast CI runs. See <code>.github/workflows/ci.yml</code>.</p>
+            </div>
+
+            <h3>6.2 — Android CI (Planned)</h3>
+            <div class="milestone-item">
+                <h4>Gradle Build &amp; Unit Tests</h4>
+                <p>Future job: Setup Android SDK/NDK, cross-compile <code>libshunkan_core.so</code> for ARM64, run <code>./gradlew assembleDebug</code> and <code>./gradlew testDebugUnitTest</code>. Will be added when Phase 3 implementation begins.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 7 -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <div class="phase-header" style="margin-top:0;">
+                <div class="phase-title">📤 Phase 7: Packaging &amp; Distribution</div>
+                <span class="phase-badge">Release</span>
+            </div>
+            <p>Multi-format packaging for Linux distributions and Android devices.</p>
+
+            <h3>7.1 — Linux Packaging</h3>
+            <div class="milestone-item">
+                <h4><code>.deb</code>, <code>.AppImage</code>, Flatpak</h4>
+                <p><strong>.deb:</strong> Use <code>cargo-deb</code> to generate Debian packages with systemd service unit for auto-start. <strong>.AppImage:</strong> Bundle via <code>appimagetool</code> for universal Linux distribution. <strong>Flatpak:</strong> Create <code>com.shunkan.sync.flatpak</code> manifest with portal permissions for clipboard and network access.</p>
+            </div>
+
+            <h3>7.2 — Android APK</h3>
+            <div class="milestone-item">
+                <h4>Signed Release APK</h4>
+                <p>Build signed release APK via <code>./gradlew assembleRelease</code>. Include <code>libshunkan_core.so</code> for both <code>arm64-v8a</code> and <code>x86_64</code> ABIs. Target minimum SDK: API 29 (Android 10).</p>
+            </div>
+
+            <h3>7.3 — GitHub Releases</h3>
+            <div class="milestone-item">
+                <h4>Automated Release Publishing</h4>
+                <p>Tag-triggered CI job that builds all artifacts (<code>.deb</code>, <code>.AppImage</code>, <code>.apk</code>) and uploads them to GitHub Releases with checksums and changelogs.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase Timeline -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>📅 Phase Timeline Overview</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Phase</th>
+                            <th>Name</th>
+                            <th>Key Deliverables</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>Phase 1</code></td>
+                            <td>Core Rust Library</td>
+                            <td>discovery, transport, protocol, crypto, hashing, history modules</td>
+                            <td><span class="status-tag tag-active">In Progress</span></td>
+                        </tr>
+                        <tr>
+                            <td><code>Phase 2</code></td>
+                            <td>Desktop Linux</td>
+                            <td>Tauri daemon, clipboard adapter, glassmorphic UI</td>
+                            <td><span class="status-tag tag-planned">Planned</span></td>
+                        </tr>
+                        <tr>
+                            <td><code>Phase 3</code></td>
+                            <td>Android Mobile</td>
+                            <td>Kotlin project, TileService, ShareActivity, IME</td>
+                            <td><span class="status-tag tag-planned">Planned</span></td>
+                        </tr>
+                        <tr>
+                            <td><code>Phase 4</code></td>
+                            <td>File Streaming</td>
+                            <td>Chunked QUIC transfer with BLAKE3</td>
+                            <td><span class="status-tag tag-planned">Planned</span></td>
+                        </tr>
+                        <tr>
+                            <td><code>Phase 5</code></td>
+                            <td>Testing</td>
+                            <td>Unit tests, integration tests, platform tests</td>
+                            <td><span class="status-tag tag-planned">Planned</span></td>
+                        </tr>
+                        <tr>
+                            <td><code>Phase 6</code></td>
+                            <td>CI/CD</td>
+                            <td>GitHub Actions workflows</td>
+                            <td><span class="status-tag tag-planned">Planned</span></td>
+                        </tr>
+                        <tr>
+                            <td><code>Phase 7</code></td>
+                            <td>Packaging</td>
+                            <td>.deb, .AppImage, Flatpak, .apk</td>
+                            <td><span class="status-tag tag-planned">Planned</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Deviations -->
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>🔀 Deviations from Original Plan</h2>
+            <p>This section tracks any modifications to the original implementation plan made during development. Each deviation includes context, rationale, and impact assessment.</p>
+            <div class="deviation-empty" style="margin-top: 1.5rem;">
+                No deviations recorded yet. This section will be populated as implementation proceeds and real-world constraints necessitate adjustments.
+            </div>
+
+            <div class="callout-info">
+                <h4>📝 How to Record a Deviation</h4>
+                <p style="color: #cbd5e1; font-size: 0.9rem;">When a deviation occurs, add a new entry below with: <strong>Deviation ID</strong> (DEV-NNN), <strong>Original Plan</strong>, <strong>Actual Implementation</strong>, <strong>Rationale</strong>, and <strong>Impact</strong>. AI agents modifying this project must update this section before committing code that diverges from the phases above.</p>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer>
+    Project Shunkan Documentation Hub • Designed for Autonomous AI Development &amp; Iteration
+</footer>
+
+</body>
+</html>
