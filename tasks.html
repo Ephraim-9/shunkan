@@ -420,7 +420,7 @@
                 <span class="task-status status-todo">To Do</span>
             </div>
             <div class="task-desc">
-                Initialize the `core/` Rust library with Cargo workspace configuration. Setup `uniffi` dependency and create basic `discovery.rs`, `transport.rs`, and `protocol.rs` modules with a stub `hello_shunkan()` export to verify Kotlin binding generation.
+                Initialize the <code>core/</code> Rust library with Cargo workspace configuration. Setup <code>uniffi</code> dependency and create all six modules with stub exports: <code>discovery.rs</code>, <code>transport.rs</code>, <code>protocol.rs</code>, <code>crypto.rs</code> (X25519 key exchange scaffold), and <code>history.rs</code> (rusqlite + LRU scaffold). Export a stub <code>hello_shunkan()</code> function to verify Kotlin binding generation via UniFFI.
             </div>
             <div class="task-meta">
                 <div class="meta-box">
@@ -504,7 +504,11 @@
                 <span class="task-status status-todo">To Do</span>
             </div>
             <div class="task-desc">
-                Build clipboard adapter using `arboard` for X11 sessions and `wl-clipboard-rs` / `zbus` (XDG Desktop Portal) for Wayland. When local clipboard changes, push `ClipboardItem` protobuf frame to `shunkan-core` broadcasting queue.
+                Build clipboard adapter using session detection (<code>$XDG_SESSION_TYPE</code>): <br>
+                <strong>X11:</strong> Use <code>arboard</code> with a background thread polling at ~100ms intervals for <code>CLIPBOARD</code> and <code>PRIMARY</code> atom changes.<br>
+                <strong>Wayland (wlroots: Hyprland/Sway/KDE):</strong> Use <code>wl-clipboard-rs</code> implementing <code>ext-data-control-v1</code> (preferred) / <code>wlr-data-control-unstable-v1</code> for privileged background clipboard monitoring.<br>
+                <strong>Wayland (GNOME/Mutter):</strong> Run a <code>wl-paste --watch</code>-equivalent loop via <code>wl-clipboard-rs</code>; use <code>zbus</code> + <code>xdg-desktop-portal-gnome</code> backend for authorization prompt on first launch.<br>
+                When local clipboard changes, push <code>ClipboardItem</code> protobuf frame to <code>shunkan-core</code> broadcasting queue.
             </div>
             <div class="task-meta">
                 <div class="meta-box">
@@ -523,12 +527,15 @@
                 <span class="task-status status-todo">To Do</span>
             </div>
             <div class="task-desc">
-                Register global shortcut `Super + V` (`tauri-plugin-global-shortcut`) to display searchable history UI. When item is clicked/selected, use `enigo` / `wtype` to simulate `Ctrl+Shift+V` / `Ctrl+V` keystroke in target window.
+                Register global shortcut <code>Super + V</code> (<code>tauri-plugin-global-shortcut</code>) to display searchable history UI. When item is clicked/selected, inject paste using compositor-specific approach:<br>
+                <strong>X11:</strong> Use <code>enigo</code> (Xtest extension) to synthesize <code>Ctrl+V</code>.<br>
+                <strong>Wayland (wlroots: Hyprland/Sway/KDE):</strong> Use <code>wtype</code> implementing <code>virtual-keyboard-v1</code> protocol.<br>
+                <strong>Wayland (GNOME/Mutter):</strong> Write to clipboard and display a toast notification prompting the user to paste with <code>Ctrl+V</code> (GNOME blocks <code>virtual-keyboard-v1</code> for security).
             </div>
             <div class="task-meta">
                 <div class="meta-box">
                     <span class="meta-label">Verification Command</span>
-                    <code>npm run dev (Manual verify: press Super+V, select item, ensure text pastes into terminal)</code>
+                    <code>npm run dev (Manual verify: press Super+V, select item, ensure text pastes into terminal on X11/wlroots; verify clipboard-write + toast on GNOME Wayland)</code>
                 </div>
             </div>
         </div>
@@ -569,12 +576,13 @@
                 <span class="task-status status-todo">To Do</span>
             </div>
             <div class="task-desc">
-                Implement `ShunkanTileService` enabling users to tap notification tile to push current clipboard or fetch latest item from Linux. Implement `ShareActivity` handling `ACTION_SEND` intents to immediately broadcast shared text/files to Linux peers.
+                Implement <code>ShunkanTileService</code> enabling users to tap notification tile to push current clipboard or fetch latest item from Linux. Implement <code>ShareActivity</code> handling <code>ACTION_SEND</code> and <code>ACTION_SEND_MULTIPLE</code> intents to immediately broadcast shared text/files to Linux peers.<br><br>
+                <strong>Direct Share Row:</strong> Register as a Direct Share target so paired Linux devices appear at the top row of Android's system Share Sheet (above the generic app list). Implement <code>ShortcutManager.pushDynamicShortcut()</code> with <code>categories="android.intent.category.SEND_TARGET"</code> and <code>targetClass=".ShareActivity"</code> in <code>shortcuts.xml</code> using the AndroidX <code>sharetarget</code> library.
             </div>
             <div class="task-meta">
                 <div class="meta-box">
                     <span class="meta-label">Verification Command</span>
-                    <code>./gradlew installDebug (Manual verify: pull notification bar, tap Shunkan Tile, verify instant sync)</code>
+                    <code>./gradlew installDebug (Manual verify: pull notification bar, tap Shunkan Tile, verify instant sync; share text from browser → verify Shunkan device appears in Direct Share top row)</code>
                 </div>
             </div>
         </div>
@@ -588,7 +596,9 @@
                 <span class="task-status status-todo">To Do</span>
             </div>
             <div class="task-desc">
-                Implement lightweight `ShunkanIME` keyboard overlay. Register `ClipboardManager.OnPrimaryClipChangedListener` inside keyboard context to enable true, seamless background clipboard auto-capture on Android 10+ devices without Shizuku or root.
+                Implement lightweight <code>ShunkanIME</code> extending <code>InputMethodService</code>. Register <code>ClipboardManager.OnPrimaryClipChangedListener</code> inside the IME context to enable true, seamless background clipboard auto-capture on Android 10+ devices without root.<br><br>
+                <strong>Shizuku Power-User Toggle:</strong> Also implement an optional Shizuku privilege elevation path: detect if Shizuku is running and, if authorized, request <code>appops set com.shunkan.sync READ_CLIPBOARD allow</code> to enable standard background <code>OnPrimaryClipChangedListener</code> without requiring the user to switch keyboard.<br><br>
+                <em>Note: Do NOT use <code>AccessibilityService</code> for clipboard capture — violates Play Store policies and is silently blocked by Android 10+.</em>
             </div>
             <div class="task-meta">
                 <div class="meta-box">
@@ -615,7 +625,7 @@
                 <span class="task-status status-todo">To Do</span>
             </div>
             <div class="task-desc">
-                Add file transfer protocol frames inside `shunkan-core`. Stream binary files in 64KB chunks with SHA-256 rolling checks. Implement transfer progress event broadcasting and auto-resume from last byte offset on reconnect.
+                Add file transfer protocol frames inside <code>shunkan-core</code>. Stream binary files in 64 KB chunks using <strong>BLAKE3</strong> (<code>blake3</code> crate) for rolling integrity verification — BLAKE3 achieves 15–20 GB/s throughput via SIMD (vs SHA-256 which bottlenecks CPU at Wi-Fi 6 speeds &gt;100 MB/s). Implement Merkle-tree chunked verification for resumable integrity checks. Implement transfer progress event broadcasting and auto-resume from last byte offset on reconnect.
             </div>
             <div class="task-meta">
                 <div class="meta-box">

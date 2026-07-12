@@ -422,7 +422,7 @@
                         <tr>
                             <td><code>REQ-CORE-01</code></td>
                             <td>Zero-Config mDNS Discovery</td>
-                            <td>Devices automatically discover peers on the same subnet using `_shunkan-sync._tcp.local.` / `_udp.local.`. Shows peer name, OS type, and online status.</td>
+                            <td>Devices automatically discover peers on the same subnet using <code>_shunkan-sync._udp.local.</code> service records (DNS-SD over UDP, RFC 6763). Shows peer name, OS type, and online status. Default QUIC listen port: <code>4433/udp</code>.</td>
                             <td class="priority-p0">P0 (Critical)</td>
                             <td>Linux & Android</td>
                         </tr>
@@ -456,15 +456,15 @@
                         </tr>
                         <tr>
                             <td><code>REQ-CLIP-04</code></td>
-                            <td>Android Optional IME / Accessibility Service</td>
-                            <td>Provide an optional lightweight Custom Keyboard (IME) or Accessibility Service for power users to enable true automatic background clipboard capture on Android 10+.</td>
+                            <td>Android Optional IME / Shizuku Privilege Grant</td>
+                            <td>Provide an optional lightweight Custom Keyboard (<code>InputMethodService</code>) for true automatic background clipboard capture on Android 10+ without root. For developer/enthusiast power users, support optional <strong>Shizuku</strong> (<code>adb shell appops set com.shunkan.sync READ_CLIPBOARD allow</code>) privilege elevation as a secondary toggle.</td>
                             <td class="priority-p1">P1 (High)</td>
                             <td>Android 10+ (API 29+)</td>
                         </tr>
                         <tr>
                             <td><code>REQ-FILE-01</code></td>
                             <td>High-Speed Chunked File Streaming</td>
-                            <td>Drag-and-drop on Linux or file picker/share sheet on Android transfers binary streams via QUIC/TCP with SHA-256 integrity verification and progress bars.</td>
+                            <td>Drag-and-drop on Linux or file picker/share sheet on Android transfers binary streams via <strong>pure QUIC (<code>quinn</code> over UDP)</strong> in 64 KB chunks with <strong>BLAKE3</strong> rolling integrity verification (<code>blake3</code> crate — 15–20 GB/s SIMD throughput vs SHA-256 bottlenecks at >100 MB/s). Includes real-time progress bars. No TCP fallback in v1.0 (see ADR-001).</td>
                             <td class="priority-p0">P0 (Critical)</td>
                             <td>Linux & Android</td>
                         </tr>
@@ -506,9 +506,10 @@
                 <div class="ai-text">
                     <h4>Directives for Future AI Agents Parsing This PRD</h4>
                     <p>
-                        Whenever tasked with modifying or extending this product, AI agents MUST preserve two core tenets:
-                        <br>1. <strong>Never introduce polling loops on Android main threads</strong> to bypass clipboard blocks; always utilize the event-driven `TileService`, `ShareSheet`, or `IME` hooks detailed in `research.html`.
-                        <br>2. <strong>Do not use bloated web frameworks (Electron)</strong> for the Linux desktop daemon. The core logic must reside in `shunkan-core` with high-speed async execution to maintain the < 20MB RAM non-functional constraint.
+                        Whenever tasked with modifying or extending this product, AI agents MUST preserve three core tenets:
+                        <br>1. <strong>Never introduce polling loops on Android main threads</strong> to bypass clipboard blocks; always utilize the event-driven <code>TileService</code>, <code>ShareSheet</code>, or <code>InputMethodService</code> (<code>ShunkanIME</code>) hooks detailed in <code>research.html</code>. Never use <code>AccessibilityService</code> for clipboard capture.
+                        <br>2. <strong>Do not use bloated web frameworks (Electron)</strong> for the Linux desktop daemon. The core logic must reside in <code>shunkan-core</code> with high-speed async execution to maintain the &lt;20MB RAM invariant ceiling (<code>INV-01</code>). Target operating baseline is &lt;15MB idle.
+                        <br>3. <strong>Use BLAKE3 (<code>blake3</code> crate), not SHA-256</strong>, for all file chunk integrity verification in <code>shunkan-core</code> to avoid CPU bottlenecks at gigabit transfer speeds (see ADR-003).
                     </p>
                 </div>
             </div>

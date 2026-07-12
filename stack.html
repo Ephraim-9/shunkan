@@ -353,8 +353,8 @@
                     <div style="color: var(--accent-cyan); font-weight: 700; font-size: 0.85rem; text-transform: uppercase; margin-bottom: 0.5rem;">⭐ Selected Stack</div>
                     <h3 style="margin-top:0; color: var(--text-main);">Rust Core + Native UI (Tauri / Kotlin)</h3>
                     <p>
-                        <strong>Shared Engine:</strong> Pure Rust (`shunkan-core`) compiled to native library (`libshunkan_core.so`) for Android via `UniFFI`, and directly linked into Tauri v2 on Linux.
-                        <br><br><strong>Why Selected:</strong> Zero-copy async streams (< 15MB RAM footprint on Linux), sub-millisecond local P2P encryption via `quinn`, and 100% native look & feel on both Android (`Jetpack Compose`) and Linux (`Tauri/GTK4`).
+                        <strong>Shared Engine:</strong> Pure Rust (<code>shunkan-core</code>) compiled to native library (<code>libshunkan_core.so</code>) for Android via <code>UniFFI</code>, and directly linked into Tauri v2 on Linux.
+                        <br><br><strong>Why Selected:</strong> Zero-copy async streams (<strong>target: ~15MB RAM idle; hard ceiling: &lt;20MB per INV-01</strong>), sub-millisecond local P2P encryption via <code>quinn</code>, and 100% native look &amp; feel on both Android (<code>Jetpack Compose</code>) and Linux (<code>Tauri/GTK4</code>). File chunk integrity uses <code>BLAKE3</code> (not SHA-256) to prevent CPU bottlenecks at gigabit speeds.
                     </p>
                 </div>
                 <div class="card col-4" style="background: rgba(255, 255, 255, 0.01);">
@@ -475,22 +475,22 @@
                 Future AI agents should maintain this clean, modular workspace hierarchy across all development stages:
             </p>
             <pre><code>/shunkan
-├── core/                        # Shared Rust P2P & Clipboard Engine (shunkan-core)
+├── core/                        # Shared Rust P2P &amp; Clipboard Engine (shunkan-core)
 │   ├── Cargo.toml
 │   ├── src/
 │   │   ├── lib.rs               # Core FFI exports via UniFFI
-│   │   ├── discovery.rs         # mDNS-SD local network broadcaster & listener
-│   │   ├── transport.rs         # QUIC / TLS 1.3 socket manager & stream multiplexer
+│   │   ├── discovery.rs         # mDNS-SD local network broadcaster &amp; listener (_shunkan-sync._udp.local.)
+│   │   ├── transport.rs         # QUIC / TLS 1.3 socket manager &amp; stream multiplexer (port 4433/udp) + BLAKE3
 │   │   ├── protocol.rs          # Message frames (ClipboardItem, FileChunk, Handshake)
 │   │   ├── crypto.rs            # X25519 key exchange, PIN verification, cert storage
-│   │   └── history.rs           # SQLite / In-memory LRU clipboard history store
+│   │   └── history.rs           # SQLite (rusqlite) LRU clipboard history + BLAKE3 deduplication
 │   └── uniffi/                  # UniFFI interface definition (.udl or macro-based)
 ├── desktop-linux/               # Linux Desktop Application (Tauri v2 + Rust)
 │   ├── src-tauri/
 │   │   ├── Cargo.toml           # Links to ../core
 │   │   ├── src/
-│   │   │   ├── main.rs          # System tray bootstrap & hotkey registration
-│   │   │   ├── clipboard.rs     # X11/Wayland clipboard listener & auto-injector
+│   │   │   ├── main.rs          # System tray bootstrap &amp; hotkey registration
+│   │   │   ├── clipboard.rs     # X11 (arboard) / Wayland (ext-data-control-v1 + wl-clipboard-rs)
 │   │   │   └── commands.rs      # Tauri IPC commands bridged to shunkan-core
 │   │   └── tauri.conf.json
 │   └── src/                     # HTML/CSS/JS Glassmorphic Command Palette UI

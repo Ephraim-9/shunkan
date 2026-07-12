@@ -373,18 +373,19 @@
                     </div>
                     <p>
                         In `AndroidManifest.xml`, Shunkan registers `ACTION_SEND` and `ACTION_SEND_MULTIPLE` intent filters for text (`text/plain`) and binary files (`*/*`).
-                        <br><br>Whenever a user highlights text inside Chrome, Notes, or selects 10 photos in Gallery and taps `Share -> Shunkan Desktop`, `ShareActivity` immediately streams the payload over the active QUIC socket directly to the Linux system tray without needing background polling.
+                        <br><br>Whenever a user highlights text inside Chrome, Notes, or selects 10 photos in Gallery and taps `Share -> Shunkan Desktop`, `ShareActivity` immediately streams the payload over the active QUIC socket (`_shunkan._tcp`) directly to the Linux system tray without needing background polling.
                     </p>
                 </div>
 
                 <div class="card col-6" style="background: rgba(255,255,255,0.015);">
                     <div class="method-title">
-                        <span>Method C: Optional Custom Keyboard (`ShunkanIME`)</span>
+                        <span>Method C: Optional Custom Keyboard (<code>ShunkanIME</code>)</span>
                         <span class="tag tag-optional">True Auto-Sync</span>
                     </div>
                     <p>
-                        Under Android's security model, **the currently active Input Method Editor (IME) is granted explicit permission to read and write the clipboard at all times**.
-                        <br><br>For power users who demand 100% automated background clipboard sync, Shunkan includes a lightweight custom keyboard overlay (`ShunkanIME`). When enabled, any text copied inside any Android app is immediately caught by `ShunkanIME` and fired across Wi-Fi to Linux instantly.
+                        Under Android's security model, <strong>the currently active Input Method Editor (IME) is granted explicit permission to read and write the clipboard at all times</strong>.
+                        <br><br>For power users who demand 100% automated background clipboard sync, Shunkan includes a lightweight custom keyboard overlay (<code>ShunkanIME</code> extends <code>InputMethodService</code>). When enabled, any text copied inside any Android app is immediately caught by the <code>OnPrimaryClipChangedListener</code> inside the keyboard context and fired across Wi-Fi to Linux instantly.
+                        <br><br><em>Note: <code>AccessibilityService</code> must NOT be used for clipboard capture — Google Play Store policies prohibit it and Android 10+ silently blocks clipboard reads from Accessibility contexts.</em>
                     </p>
                 </div>
 
@@ -394,9 +395,9 @@
                         <span class="tag tag-root">Power Users / Root</span>
                     </div>
                     <p>
-                        For developers or enthusiasts utilizing **Shizuku** (wireless ADB daemon), Shunkan provides a one-click permission elevation toggle:
+                        For developers or enthusiasts utilizing <strong>Shizuku</strong> (wireless ADB daemon), Shunkan provides a one-click permission elevation toggle:
                         <br><br><code>adb shell appops set com.shunkan.sync READ_CLIPBOARD allow</code>
-                        <br><br>Once granted, standard background `OnPrimaryClipChangedListener` polling functions identically to older Android versions (API < 28) with zero user friction.
+                        <br><br>Once granted, standard background <code>OnPrimaryClipChangedListener</code> polling functions identically to older Android versions (API &lt; 28) with zero user friction. This is the secondary power-user path; <code>ShunkanIME</code> (Method C) is recommended as the default.
                     </p>
                 </div>
             </div>
@@ -410,28 +411,39 @@
 
             <div class="section-grid" style="margin-bottom:0; margin-top: 1.25rem; gap: 1.25rem;">
                 <div class="card col-6" style="background: rgba(255,255,255,0.015); border-color: rgba(99, 102, 241, 0.3);">
-                    <h3>X11 Session Handling (`$XDG_SESSION_TYPE=x11`)</h3>
+                    <h3>X11 Session Handling (<code>$XDG_SESSION_TYPE=x11</code>)</h3>
                     <p>
                         In X11, clipboard management is global and open. Applications interact with two primary selection atoms:
                     </p>
                     <ul>
-                        <li><code>CLIPBOARD</code>: Populated by explicit `Ctrl+C` / `Ctrl+V` operations.</li>
+                        <li><code>CLIPBOARD</code>: Populated by explicit <code>Ctrl+C</code> / <code>Ctrl+V</code> operations.</li>
                         <li><code>PRIMARY</code>: Automatically populated whenever text is highlighted/selected with the mouse (pasted via middle mouse click).</li>
                     </ul>
                     <p style="margin-top:0.75rem;">
-                        Our Linux daemon utilizes the `arboard` Rust crate (`arboard::Clipboard::new()`) to monitor both selections cleanly with negligible CPU usage.
+                        Our Linux daemon uses the <code>arboard</code> Rust crate (<code>arboard::Clipboard::new()</code>) to read/write both selections. For persistent background monitoring, a dedicated <code>std::thread</code> polls both atoms at ~100ms intervals — this is safe on X11 since all applications share global clipboard ownership.
+                    </p>
+                    <p style="margin-top:0.75rem;">
+                        For <strong>auto-paste key injection</strong> after history selection, <code>enigo</code> works reliably on X11 by interacting with the X11 Xtest extension.
                     </p>
                 </div>
 
                 <div class="card col-6" style="background: rgba(255,255,255,0.015); border-color: rgba(0, 229, 255, 0.3);">
-                    <h3>Wayland Session Handling (`$XDG_SESSION_TYPE=wayland`)</h3>
+                    <h3>Wayland Session Handling (<code>$XDG_SESSION_TYPE=wayland</code>)</h3>
                     <p>
-                        Wayland isolates background windows for security; unfocused applications normally cannot read the clipboard. To conquer this across all compositors:
+                        Wayland isolates background windows for security; unfocused applications normally cannot read the clipboard. Our strategy varies by compositor:
                     </p>
                     <ul>
-                        <li><strong>wlroots Compositors (Hyprland / Sway):</strong> We utilize the `wl-clipboard-rs` crate implementing `wlr-data-control-unstable-v1` / `ext-data-control-v1`, which allows our system tray daemon to monitor data streams directly.</li>
-                        <li><strong>GNOME / KDE Wayland:</strong> We connect via D-Bus (`zbus` crate) to the official **XDG Desktop Portal** (`org.freedesktop.portal.Clipboard`), requesting explicit user authorization on first launch to sync seamlessly.</li>
+                        <li><strong>wlroots Compositors (Hyprland / Sway / KDE Plasma Wayland):</strong> Use <code>wl-clipboard-rs</code> implementing <code>ext-data-control-v1</code> (preferred) / <code>wlr-data-control-unstable-v1</code>, which grants our background daemon privileged clipboard manager access for both monitoring history and persisting data after source apps close.</li>
+                        <li><strong>GNOME Wayland (Mutter):</strong> GNOME does <em>not</em> expose <code>ext-data-control-v1</code> to arbitrary apps. We connect via D-Bus (<code>zbus</code> crate) to <code>org.freedesktop.portal.Clipboard</code> — but this portal is <strong>only accessible inside an active <code>org.freedesktop.portal.RemoteDesktop</code> session</strong>. For standalone daemon use, Shunkan on GNOME Wayland runs a <code>wl-paste --watch</code>-equivalent loop using <code>wl-clipboard-rs</code> paired with the <code>xdg-desktop-portal-gnome</code> backend requesting explicit user authorization on first launch.</li>
                     </ul>
+                    <div class="callout-warning" style="margin-top:1rem;">
+                        <h4>⚠️ Synthetic Key Injection on Wayland</h4>
+                        <p>Wayland prevents arbitrary apps from injecting keystrokes into other windows. For auto-paste after clipboard history selection:</p>
+                        <ul style="margin-top:0.5rem;">
+                            <li><strong>wlroots (Hyprland/Sway/KDE):</strong> Use <code>wtype</code> (implements <code>virtual-keyboard-v1</code> protocol). ✅ Supported.</li>
+                            <li><strong>GNOME Wayland:</strong> <code>virtual-keyboard-v1</code> is blocked. Use <code>org.freedesktop.portal.RemoteDesktop</code> virtual keyboard injection, or fall back to writing directly to the Wayland clipboard and prompting the user to manually paste with <code>Ctrl+V</code>.</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>

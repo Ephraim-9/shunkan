@@ -336,10 +336,11 @@
             <h2>🛡️ Absolute Architectural Invariants</h2>
             <p>Non-negotiable constraints that must never be broken:</p>
             <ul style="margin-top: 1rem;">
-                <li><strong>INV-01 (Memory Cap):</strong> The Linux system tray daemon (`desktop-linux`) must never exceed <strong>20 MB of idle memory</strong>. Do not introduce Node.js runtime engines or Chromium webview background loops outside of the explicit Tauri UI overlay window.</li>
-                <li><strong>INV-02 (Zero Cloud Reliance):</strong> All device pairing, mDNS discovery, and QUIC socket transmissions must occur strictly over local IP/subnets (`_shunkan-sync._udp.local`). Do not hardcode external STUN, TURN, or telemetry server URLs.</li>
-                <li><strong>INV-03 (No Polling on Android):</strong> Never write `while(true)` or `Handler.postDelayed()` loops on Android main/service threads to poll clipboard states. Rely strictly on `TileService`, `ShareTarget`, and `ShunkanIME` event hooks.</li>
-                <li><strong>INV-04 (FFI Type Safety):</strong> All bridge interfaces between `shunkan-core` and Kotlin must be defined using `uniffi` interface definitions (`.udl` or proc-macros). Never write raw JNI C-style byte manipulation boilerplate.</li>
+                <li><strong>INV-01 (Memory Cap):</strong> The Linux system tray daemon (<code>desktop-linux</code>) targets <strong>~15MB of idle memory</strong> as its operating baseline and must never exceed <strong>20 MB</strong> as its hard ceiling. Do not introduce Node.js runtime engines or Chromium webview background loops outside of the explicit Tauri UI overlay window.</li>
+                <li><strong>INV-02 (Zero Cloud Reliance):</strong> All device pairing, mDNS discovery (<code>_shunkan-sync._udp.local.</code>, port <code>4433/udp</code>), and QUIC socket transmissions must occur strictly over local IP/subnets. Do not hardcode external STUN, TURN, or telemetry server URLs.</li>
+                <li><strong>INV-03 (No Polling on Android):</strong> Never write <code>while(true)</code> or <code>Handler.postDelayed()</code> loops on Android main/service threads to poll clipboard states. Rely strictly on <code>TileService</code>, <code>ShareTarget</code>, and <code>ShunkanIME</code> (<code>InputMethodService</code>) event hooks. Never use <code>AccessibilityService</code> for clipboard capture — prohibited by Play Store policy.</li>
+                <li><strong>INV-04 (FFI Type Safety):</strong> All bridge interfaces between <code>shunkan-core</code> and Kotlin must be defined using <code>uniffi</code> interface definitions (<code>.udl</code> or proc-macros). Never write raw JNI C-style byte manipulation boilerplate.</li>
+                <li><strong>INV-05 (BLAKE3 for File Chunks):</strong> All chunked file integrity verification in <code>shunkan-core</code> must use <code>BLAKE3</code> (<code>blake3</code> crate). SHA-256 is prohibited for file streaming — it bottlenecks CPU throughput at Wi-Fi 6 speeds above 100 MB/s. BLAKE3's SIMD throughput is 15–20 GB/s.</li>
             </ul>
         </div>
 
@@ -349,11 +350,11 @@
             <div style="margin-top: 1rem;">
                 <div class="adr-card" style="margin-bottom: 0.75rem;">
                     <div class="adr-header">
-                        <span class="adr-title">Linux Firewall Blocking UDP 5353 (mDNS)</span>
+                        <span class="adr-title">Linux Firewall Blocking UDP 5353 (mDNS) & 4433 (QUIC)</span>
                         <span class="adr-status" style="background: rgba(245, 158, 11, 0.15); color: var(--accent-amber);">Mitigated</span>
                     </div>
                     <div class="adr-body">
-                        If `ufw` or `firewalld` blocks multicast UDP port 5353, discovery fails. <em>Mitigation:</em> Our CLI/GUI displays a one-click notification advising the exact rule: `sudo ufw allow 5353/udp && sudo ufw allow 4433/udp`.
+                        If <code>ufw</code> or <code>firewalld</code> blocks multicast UDP port 5353 (mDNS) or the QUIC default port 4433, discovery and transport fail. <em>Mitigation:</em> Our CLI/GUI displays a one-click notification advising the exact rule: <code>sudo ufw allow 5353/udp && sudo ufw allow 4433/udp</code>. Service record is advertised as <code>_shunkan-sync._udp.local.</code> (pure UDP, RFC 6763 compliant).
                     </div>
                 </div>
 
@@ -363,17 +364,27 @@
                         <span class="adr-status" style="background: rgba(245, 158, 11, 0.15); color: var(--accent-amber);">Mitigated</span>
                     </div>
                     <div class="adr-body">
-                        OEM battery managers (Xiaomi MIUI, Samsung OneUI) kill background sockets. <em>Mitigation:</em> Socket reconnects instantly via `TileService` tap or `ShareSheet` activation (`0-RTT` QUIC resume).
+                        OEM battery managers (Xiaomi MIUI, Samsung OneUI) kill background sockets. <em>Mitigation:</em> Socket reconnects instantly via <code>TileService</code> tap or <code>ShareSheet</code> activation (<code>0-RTT</code> QUIC resume).
                     </div>
                 </div>
 
-                <div class="adr-card" style="margin-bottom: 0;">
+                <div class="adr-card" style="margin-bottom: 0.75rem;">
                     <div class="adr-header">
                         <span class="adr-title">X11 Clipboard Feedback Loop Deadlock</span>
                         <span class="adr-status" style="background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald);">Solved</span>
                     </div>
                     <div class="adr-body">
-                        When `shunkan-core` writes remote text into Linux X11 clipboard, `arboard` might re-trigger a local copy event, looping infinitely. <em>Mitigation:</em> Tag clipboard payloads with an internal hash nonce; skip broadcast if nonce matches last received peer payload.
+                        When <code>shunkan-core</code> writes remote text into Linux X11 clipboard, <code>arboard</code> might re-trigger a local copy event, looping infinitely. <em>Mitigation:</em> Tag clipboard payloads with an internal hash nonce; skip broadcast if nonce matches last received peer payload.
+                    </div>
+                </div>
+
+                <div class="adr-card" style="margin-bottom: 0;">
+                    <div class="adr-header">
+                        <span class="adr-title">GNOME Wayland: Synthetic Key Injection Blocked</span>
+                        <span class="adr-status" style="background: rgba(245, 158, 11, 0.15); color: var(--accent-amber);">Mitigated</span>
+                    </div>
+                    <div class="adr-body">
+                        GNOME/Mutter blocks <code>virtual-keyboard-v1</code> protocol for security, preventing <code>wtype</code> from injecting <code>Ctrl+V</code> keystrokes into other windows. <em>Mitigation:</em> On GNOME Wayland sessions, Shunkan writes the selected history item directly to the Wayland clipboard and displays a toast notification prompting the user to paste with <code>Ctrl+V</code>. On wlroots compositors (Hyprland/Sway/KDE), full auto-paste via <code>wtype</code> (<code>virtual-keyboard-v1</code>) is supported.
                     </div>
                 </div>
             </div>
@@ -383,25 +394,52 @@
             <h2>📜 Architectural Decision Records (ADR)</h2>
             <div class="adr-card">
                 <div class="adr-header">
-                    <span class="adr-title">ADR-001: Selection of QUIC (`quinn`) over WebSockets/TCP for P2P Transport</span>
+                    <span class="adr-title">ADR-001: Selection of QUIC (<code>quinn</code>) over WebSockets/TCP for P2P Transport</span>
                     <span class="adr-status">Approved • July 2026</span>
                 </div>
                 <div class="adr-body">
                     <strong>Context:</strong> We required a transport protocol capable of simultaneously transmitting tiny clipboard strings (< 100 bytes) with zero latency while transferring multi-gigabyte files across Wi-Fi without blocking.
-                    <br><strong>Decision:</strong> Adopted `quinn` crate implementing HTTP/3 QUIC over UDP.
-                    <br><strong>Consequences:</strong> Eliminates head-of-line blocking via independent stream multiplexing (`Stream 0` for files, `Stream 1` for clipboard events). Requires UDP port opening on Linux desktop firewalls.
+                    <br><strong>Decision:</strong> Adopted <code>quinn</code> crate implementing QUIC over UDP (port <code>4433/udp</code>). No TCP fallback in v1.0 — TCP is explicitly excluded per this decision.
+                    <br><strong>Consequences:</strong> Eliminates head-of-line blocking via independent stream multiplexing (<code>Stream 0</code> for files, <code>Stream 1</code> for clipboard events). Requires UDP port opening on Linux desktop firewalls.
                 </div>
             </div>
 
             <div class="adr-card">
                 <div class="adr-header">
-                    <span class="adr-title">ADR-002: Adoption of `UniFFI` for Android Kotlin Bindings</span>
+                    <span class="adr-title">ADR-002: Adoption of <code>UniFFI</code> for Android Kotlin Bindings</span>
                     <span class="adr-status">Approved • July 2026</span>
                 </div>
                 <div class="adr-body">
-                    <strong>Context:</strong> Calling Rust code from Kotlin/JVM historically required fragile, manual JNI (`Java Native Interface`) C bridges prone to segmentation faults and memory leaks.
-                    <br><strong>Decision:</strong> Use Mozilla's `uniffi` crate to auto-generate type-safe Kotlin classes from Rust interface definitions.
-                    <br><strong>Consequences:</strong> Reduces boilerplate across `mobile-android/` by 90%. Guarantees thread safety when passing asynchronous streams and complex data structs across the JNI boundary.
+                    <strong>Context:</strong> Calling Rust code from Kotlin/JVM historically required fragile, manual JNI (<code>Java Native Interface</code>) C bridges prone to segmentation faults and memory leaks.
+                    <br><strong>Decision:</strong> Use Mozilla's <code>uniffi</code> crate to auto-generate type-safe Kotlin classes from Rust interface definitions.
+                    <br><strong>Consequences:</strong> Reduces boilerplate across <code>mobile-android/</code> by 90%. Guarantees thread safety when passing asynchronous streams and complex data structs across the JNI boundary.
+                </div>
+            </div>
+
+            <div class="adr-card">
+                <div class="adr-header">
+                    <span class="adr-title">ADR-003: BLAKE3 (<code>blake3</code> crate) for File Chunk Integrity Verification</span>
+                    <span class="adr-status">Approved • July 2026</span>
+                </div>
+                <div class="adr-body">
+                    <strong>Context:</strong> File transfer targets Wi-Fi 6 speeds >100 MB/s. SHA-256 hashing of 64 KB chunks is CPU-bound and becomes a bottleneck on ARM mobile processors at these speeds.
+                    <br><strong>Decision:</strong> Replace SHA-256 with <strong>BLAKE3</strong> (<code>blake3</code> crate) for all file chunk integrity verification and deduplication nonces in <code>shunkan-core</code>.
+                    <br><strong>Consequences:</strong> BLAKE3 achieves 15–20 GB/s throughput via SIMD parallelism and native Merkle-tree chunking — orders of magnitude faster than SHA-256. Natively supports incremental verification for resumable transfers. Standard in modern Rust P2P engines (e.g., <code>iroh</code>).
+                </div>
+            </div>
+
+            <div class="adr-card">
+                <div class="adr-header">
+                    <span class="adr-title">ADR-004: Tiered Wayland Clipboard Protocol Strategy</span>
+                    <span class="adr-status">Approved • July 2026</span>
+                </div>
+                <div class="adr-body">
+                    <strong>Context:</strong> <code>org.freedesktop.portal.Clipboard</code> (XDG Desktop Portal) is only accessible inside an active <code>org.freedesktop.portal.RemoteDesktop</code> session and is not available for standalone daemon clipboard monitoring on GNOME Wayland. Additionally, GNOME/Mutter blocks the <code>virtual-keyboard-v1</code> Wayland protocol, preventing <code>wtype</code> from injecting keystrokes.
+                    <br><strong>Decision:</strong> Use a tiered compositor-aware strategy in <code>clipboard.rs</code>:
+                    <br> <strong>1.</strong> wlroots (Hyprland/Sway/KDE): <code>ext-data-control-v1</code> via <code>wl-clipboard-rs</code> for monitoring; <code>wtype</code> for injection.
+                    <br> <strong>2.</strong> GNOME Wayland: <code>wl-paste --watch</code>-equivalent loop via <code>wl-clipboard-rs</code> + <code>xdg-desktop-portal-gnome</code> auth; clipboard-write fallback + toast for paste injection.
+                    <br> <strong>3.</strong> X11: <code>arboard</code> polling + <code>enigo</code> (Xtest) injection.
+                    <br><strong>Consequences:</strong> Full auto-paste works on X11 and wlroots compositors. GNOME Wayland requires manual <code>Ctrl+V</code> from user after clipboard history selection (security trade-off).
                 </div>
             </div>
         </div>
