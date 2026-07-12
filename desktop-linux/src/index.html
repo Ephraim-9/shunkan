@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shunkan — Clipboard Sync</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Glassmorphic Command Palette Overlay -->
+    <div id="app" class="palette-container">
+        <!-- Header -->
+        <header class="palette-header">
+            <div class="logo">
+                <div class="logo-icon">瞬</div>
+                <span class="logo-text">Shunkan</span>
+            </div>
+            <div class="status-bar">
+                <span id="peer-count" class="status-badge">0 peers</span>
+                <span id="session-type" class="status-badge muted">—</span>
+            </div>
+        </header>
+
+        <!-- Search / Filter -->
+        <div class="search-container">
+            <input
+                type="text"
+                id="search-input"
+                class="search-input"
+                placeholder="Search clipboard history…"
+                autocomplete="off"
+                autofocus
+            >
+            <div class="search-shortcut">
+                <kbd>↑</kbd><kbd>↓</kbd> navigate
+                <kbd>Enter</kbd> paste
+                <kbd>Esc</kbd> close
+            </div>
+        </div>
+
+        <!-- Clipboard History List -->
+        <div id="history-list" class="history-list">
+            <div class="empty-state">
+                <div class="empty-icon">📋</div>
+                <p>No clipboard history yet</p>
+                <p class="empty-hint">Copy something to get started</p>
+            </div>
+        </div>
+
+        <!-- Connected Peers Panel -->
+        <div class="peers-panel">
+            <h3 class="peers-title">Connected Devices</h3>
+            <div id="peers-list" class="peers-list">
+                <div class="empty-peers">No peers discovered</div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="palette-footer">
+            <span>Shunkan v<span id="version">0.1.0</span></span>
+            <span class="separator">·</span>
+            <span>Port <span id="port">4433</span>/udp</span>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
