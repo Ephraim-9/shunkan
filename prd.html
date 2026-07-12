@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PRD — Project Shunkan (瞬間 • Cross-Platform Clipboard & File Share)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #080b11;
+            --bg-surface: #101622;
+            --bg-surface-hover: #161e2f;
+            --bg-glass: rgba(16, 22, 34, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(0, 229, 255, 0.3);
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent-cyan: #00e5ff;
+            --accent-indigo: #6366f1;
+            --accent-purple: #a855f7;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 85% 80%, rgba(0, 229, 255, 0.1) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        /* Top Navigation */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 800;
+            font-size: 1.25rem;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: 900;
+            font-size: 1.1rem;
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+        }
+
+        nav ul {
+            display: flex;
+            list-style: none;
+            gap: 0.5rem;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        nav a:hover {
+            color: var(--text-main);
+            background: var(--bg-surface-hover);
+        }
+
+        nav a.active {
+            color: var(--accent-cyan);
+            background: rgba(0, 229, 255, 0.1);
+            border-color: rgba(0, 229, 255, 0.2);
+            box-shadow: 0 0 12px rgba(0, 229, 255, 0.15);
+        }
+
+        /* Main Container */
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+            flex: 1;
+            width: 100%;
+        }
+
+        /* Hero Header */
+        .page-header {
+            margin-bottom: 3rem;
+            position: relative;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent-indigo);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            font-size: 2.75rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 1rem;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 800px;
+            font-weight: 400;
+        }
+
+        /* Grid & Cards */
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.75rem;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.18);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-indigo));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .col-12 { grid-column: span 12; }
+        .col-8 { grid-column: span 8; }
+        .col-6 { grid-column: span 6; }
+        .col-4 { grid-column: span 4; }
+
+        @media (max-width: 900px) {
+            .col-8, .col-6, .col-4 { grid-column: span 12; }
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 1.25rem 0 0.5rem;
+            color: var(--accent-cyan);
+        }
+
+        p, li {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        ul, ol {
+            padding-left: 1.5rem;
+            margin-top: 0.5rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        li strong {
+            color: var(--text-main);
+        }
+
+        /* Spec Table */
+        .table-container {
+            overflow-x: auto;
+            margin-top: 1rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.04);
+            padding: 1rem;
+            font-weight: 600;
+            color: var(--text-main);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-muted);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-main);
+        }
+
+        .priority-p0 { color: var(--accent-rose); font-weight: 600; }
+        .priority-p1 { color: var(--accent-amber); font-weight: 600; }
+        .priority-p2 { color: var(--accent-emerald); font-weight: 600; }
+
+        /* Code snippets */
+        code {
+            font-family: 'Fira Code', monospace;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: var(--accent-cyan);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* AI Prompt Box */
+        .ai-callout {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(168, 85, 247, 0.1));
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-top: 1.5rem;
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+
+        .ai-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .ai-text h4 {
+            color: var(--accent-purple);
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .ai-text p {
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            margin: 0;
+        }
+
+        footer {
+            border-top: 1px solid var(--border-color);
+            padding: 2rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: var(--bg-surface);
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <div class="logo-icon">瞬</div>
+        <span>Shunkan P2P Engine</span>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="prd.html" class="active">PRD</a></li>
+            <li><a href="stack.html">Tech Stack</a></li>
+            <li><a href="tasks.html">Roadmap & Tasks</a></li>
+            <li><a href="research.html">OS Research</a></li>
+            <li><a href="memory.html">AI Memory Hub</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="page-header">
+        <div class="badge">Document 1 of 5 • Product Specification</div>
+        <h1>Product Requirements Document (PRD)</h1>
+        <p class="subtitle">
+            An ultra-low latency, decentralized, cross-platform clipboard history and file-sharing ecosystem designed for Linux and Android with native UI replacement.
+        </p>
+    </div>
+
+    <div class="section-grid">
+        <div class="card col-8">
+            <h2>⚡ Executive Summary</h2>
+            <p>
+                <strong>Project Shunkan (瞬間)</strong> is a local-first, decentralized peer-to-peer (P2P) synchronization engine designed to seamlessly link Linux desktops and Android mobile devices across any permutation (Linux $\leftrightarrow$ Android, Linux $\leftrightarrow$ Linux, Android $\leftrightarrow$ Android).
+            </p>
+            <p style="margin-top: 0.75rem;">
+                Unlike traditional cloud-dependent clipboards or clunky web-based file senders, Shunkan operates over **local Wi-Fi/LAN** using zero-configuration mDNS discovery and encrypted QUIC/TLS 1.3 streams. It aims to not only sync copied items instantly (瞬間) but to **completely replace the native OS clipboard history UI** with a unified, instant, searchable command palette on Linux and a quick-action share/overlay system on Android.
+            </p>
+        </div>
+
+        <div class="card col-4">
+            <h2>🎯 Core Objectives</h2>
+            <ul>
+                <li><strong>Zero-Config Discovery:</strong> Instant local network pairing via mDNS. No IPs to type.</li>
+                <li><strong>Native UI Replacement:</strong> Replace standard OS clipboard popups with our advanced, searchable history UI.</li>
+                <li><strong>Sub-50ms Latency:</strong> Text clipboard changes propagate across devices in milliseconds.</li>
+                <li><strong>Gigabit File Transfers:</strong> Multi-gigabyte file streaming over TCP/QUIC utilizing full Wi-Fi 6 bandwidth.</li>
+                <li><strong>100% Local & Encrypted:</strong> E2E encryption via ephemeral curve exchange. No data touches the cloud.</li>
+            </ul>
+        </div>
+
+        <div class="card col-12">
+            <h2>🧑‍💻 Target User Personas & Use Cases</h2>
+            <div class="section-grid" style="margin-bottom: 0; gap: 1rem; margin-top: 1rem;">
+                <div class="card col-4" style="background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.05);">
+                    <h3 style="margin-top:0;">The Power Developer (Linux + Android)</h3>
+                    <p>Copies a complex API key or bash script snippet on their Linux terminal (`Ctrl+Shift+C`) and instantly taps `Paste` on their Android phone inside Termux or a testing environment without wires or email drafts.</p>
+                </div>
+                <div class="card col-4" style="background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.05);">
+                    <h3 style="margin-top:0;">The Multi-Device Designer</h3>
+                    <p>Takes a screenshot or records a 2GB screen capture on their Android phone, opens the system Share Sheet, selects "Shunkan Sync," and has the file ready on their Linux desktop downloads folder within 3 seconds.</p>
+                </div>
+                <div class="card col-4" style="background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.05);">
+                    <h3 style="margin-top:0;">The Privacy Enthusiast</h3>
+                    <p>Demands that sensitive OTP codes, passwords, and personal photos never leave the local LAN router or pass through external telemetry servers (like Google Drive or Telegram saved messages).</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card col-12">
+            <h2>📋 Functional Requirements Spec</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Feature ID</th>
+                            <th>Feature Name</th>
+                            <th>Description & Acceptance Criteria</th>
+                            <th>Priority</th>
+                            <th>Target Platforms</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>REQ-CORE-01</code></td>
+                            <td>Zero-Config mDNS Discovery</td>
+                            <td>Devices automatically discover peers on the same subnet using `_shunkan-sync._tcp.local.` / `_udp.local.`. Shows peer name, OS type, and online status.</td>
+                            <td class="priority-p0">P0 (Critical)</td>
+                            <td>Linux & Android</td>
+                        </tr>
+                        <tr>
+                            <td><code>REQ-CORE-02</code></td>
+                            <td>E2E Encrypted Handshake</td>
+                            <td>First-time pairing requires a 6-digit PIN code or QR code scan. Exchanges X25519 public keys and stores mutual TLS certificates for silent future reconnects.</td>
+                            <td class="priority-p0">P0 (Critical)</td>
+                            <td>Linux & Android</td>
+                        </tr>
+                        <tr>
+                            <td><code>REQ-CLIP-01</code></td>
+                            <td>Bidirectional Text & Rich Text Sync</td>
+                            <td>Captures UTF-8 string changes, HTML text, and small inline bitmap images (< 5MB) from OS clipboard and broadcasts to paired devices in < 50ms.</td>
+                            <td class="priority-p0">P0 (Critical)</td>
+                            <td>Linux & Android</td>
+                        </tr>
+                        <tr>
+                            <td><code>REQ-CLIP-02</code></td>
+                            <td>Linux Native Tray & Command Palette</td>
+                            <td>Global hotkey (e.g. `Super + V`) invokes a floating glassmorphic history window. Replaces native X11/Wayland clipboard manager (`xclip` / `wl-paste`). Allows instant search and insertion.</td>
+                            <td class="priority-p0">P0 (Critical)</td>
+                            <td>Linux (Wayland & X11)</td>
+                        </tr>
+                        <tr>
+                            <td><code>REQ-CLIP-03</code></td>
+                            <td>Android Native UX (Share & Quick Tile)</td>
+                            <td>Android Quick Settings Tile (`TileService`) to manually sync/paste. System Share Target (`ShareSheet`) integration to push selected text/files to Linux instantaneously.</td>
+                            <td class="priority-p0">P0 (Critical)</td>
+                            <td>Android 10+ (API 29+)</td>
+                        </tr>
+                        <tr>
+                            <td><code>REQ-CLIP-04</code></td>
+                            <td>Android Optional IME / Accessibility Service</td>
+                            <td>Provide an optional lightweight Custom Keyboard (IME) or Accessibility Service for power users to enable true automatic background clipboard capture on Android 10+.</td>
+                            <td class="priority-p1">P1 (High)</td>
+                            <td>Android 10+ (API 29+)</td>
+                        </tr>
+                        <tr>
+                            <td><code>REQ-FILE-01</code></td>
+                            <td>High-Speed Chunked File Streaming</td>
+                            <td>Drag-and-drop on Linux or file picker/share sheet on Android transfers binary streams via QUIC/TCP with SHA-256 integrity verification and progress bars.</td>
+                            <td class="priority-p0">P0 (Critical)</td>
+                            <td>Linux & Android</td>
+                        </tr>
+                        <tr>
+                            <td><code>REQ-FILE-02</code></td>
+                            <td>Resumable Transfers & Auto-Save</td>
+                            <td>If Wi-Fi drops, transfer resumes from last acknowledged chunk when connection recovers. Files save directly to `$HOME/Downloads/Shunkan` on Linux and `Documents/Shunkan` on Android.</td>
+                            <td class="priority-p2">P2 (Medium)</td>
+                            <td>Linux & Android</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card col-6">
+            <h2>🔒 Non-Functional Requirements</h2>
+            <ul>
+                <li><strong>Memory Efficiency:</strong> The background daemon on Linux must consume less than <strong>20 MB of RAM</strong> when idle (achieved via pure Rust / GTK / Tauri).</li>
+                <li><strong>Battery Optimization:</strong> On Android, network sockets must use adaptive polling or wake-locks only when a peer is actively transmitting, keeping background battery drain < 1% per 24 hours.</li>
+                <li><strong>Wayland & X11 Parity:</strong> Linux core must auto-detect `$XDG_SESSION_TYPE` and dynamically select either Xlib/XCB bindings or `wlr-data-control` / XDG Desktop Portal without crashing.</li>
+                <li><strong>Security & Sandbox:</strong> Must reject unauthenticated connections automatically and prevent directory traversal (`../../`) during file saving.</li>
+            </ul>
+        </div>
+
+        <div class="card col-6">
+            <h2>🚫 Out of Scope (v1.0)</h2>
+            <ul>
+                <li><strong>External Cloud Relay:</strong> No STUN/TURN servers for syncing over the internet (4G/5G across cities) in v1.0. Must be on the same local network / VPN (WireGuard/Tailscale compatible).</li>
+                <li><strong>iOS & Windows Desktop Clients:</strong> While the core Rust protocol (`quinn` + mDNS) will cleanly compile to Windows (`.exe`) and macOS/iOS in the future, v1.0 strictly targets Linux (`.deb`/`.AppImage`/`Flatpak`) and Android (`.apk`).</li>
+                <li><strong>Shared Screen / Remote Desktop:</strong> VNC or display mirroring is not included; focus is strictly on clipboard history and file pipelines.</li>
+            </ul>
+        </div>
+
+        <div class="card col-12">
+            <h2>🤖 AI Agent Architectural Invariants</h2>
+            <div class="ai-callout">
+                <div class="ai-icon">🧠</div>
+                <div class="ai-text">
+                    <h4>Directives for Future AI Agents Parsing This PRD</h4>
+                    <p>
+                        Whenever tasked with modifying or extending this product, AI agents MUST preserve two core tenets:
+                        <br>1. <strong>Never introduce polling loops on Android main threads</strong> to bypass clipboard blocks; always utilize the event-driven `TileService`, `ShareSheet`, or `IME` hooks detailed in `research.html`.
+                        <br>2. <strong>Do not use bloated web frameworks (Electron)</strong> for the Linux desktop daemon. The core logic must reside in `shunkan-core` with high-speed async execution to maintain the < 20MB RAM non-functional constraint.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer>
+    Project Shunkan Documentation Hub • Designed for Autonomous AI Development & Iteration
+</footer>
+
+</body>
+</html>

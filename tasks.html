@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roadmap & Tasks — Project Shunkan (瞬間)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #080b11;
+            --bg-surface: #101622;
+            --bg-surface-hover: #161e2f;
+            --bg-glass: rgba(16, 22, 34, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(0, 229, 255, 0.3);
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent-cyan: #00e5ff;
+            --accent-indigo: #6366f1;
+            --accent-purple: #a855f7;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 85% 80%, rgba(0, 229, 255, 0.1) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        /* Top Navigation */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 800;
+            font-size: 1.25rem;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: 900;
+            font-size: 1.1rem;
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+        }
+
+        nav ul {
+            display: flex;
+            list-style: none;
+            gap: 0.5rem;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        nav a:hover {
+            color: var(--text-main);
+            background: var(--bg-surface-hover);
+        }
+
+        nav a.active {
+            color: var(--accent-cyan);
+            background: rgba(0, 229, 255, 0.1);
+            border-color: rgba(0, 229, 255, 0.2);
+            box-shadow: 0 0 12px rgba(0, 229, 255, 0.15);
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+            flex: 1;
+            width: 100%;
+        }
+
+        .page-header {
+            margin-bottom: 2.5rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-emerald);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            font-size: 2.75rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 1rem;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 800px;
+            font-weight: 400;
+        }
+
+        /* Filter Controls */
+        .controls-bar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            align-items: center;
+            background: var(--bg-surface);
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .filter-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-right: 0.5rem;
+        }
+
+        .btn-filter {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 0.4rem 0.85rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-filter:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .btn-filter.active {
+            color: #000;
+            background: var(--accent-cyan);
+            border-color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        /* Task Cards */
+        .phase-header {
+            margin: 2.5rem 0 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.75rem;
+        }
+
+        .phase-title {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .phase-badge {
+            font-size: 0.75rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--accent-indigo);
+            font-weight: 600;
+        }
+
+        .task-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .task-card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateX(4px);
+        }
+
+        .task-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .task-title-wrap {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.85rem;
+        }
+
+        .task-checkbox {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 22px;
+            height: 22px;
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            position: relative;
+            margin-top: 2px;
+            flex-shrink: 0;
+            transition: all 0.2s ease;
+        }
+
+        .task-checkbox:checked {
+            background: var(--accent-emerald);
+            border-color: var(--accent-emerald);
+        }
+
+        .task-checkbox:checked::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #000;
+            font-size: 13px;
+            font-weight: 900;
+        }
+
+        .task-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .task-checkbox:checked + .task-title {
+            text-decoration: line-through;
+            color: var(--text-muted);
+        }
+
+        .task-status {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.25rem 0.65rem;
+            border-radius: 9999px;
+            text-transform: uppercase;
+        }
+
+        .status-todo { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
+        .status-in-progress { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
+        .status-completed { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
+
+        .task-desc {
+            color: var(--text-muted);
+            font-size: 0.92rem;
+            margin-bottom: 1rem;
+            padding-left: 2.2rem;
+        }
+
+        .task-meta {
+            padding-left: 2.2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .meta-box {
+            background: #06090e;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            font-size: 0.85rem;
+        }
+
+        .meta-label {
+            color: var(--accent-cyan);
+            font-weight: 600;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            margin-bottom: 0.35rem;
+            display: block;
+        }
+
+        code {
+            font-family: 'Fira Code', monospace;
+            color: #e2e8f0;
+        }
+
+        footer {
+            border-top: 1px solid var(--border-color);
+            padding: 2rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: var(--bg-surface);
+            margin-top: 3rem;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <div class="logo-icon">瞬</div>
+        <span>Shunkan P2P Engine</span>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="prd.html">PRD</a></li>
+            <li><a href="stack.html">Tech Stack</a></li>
+            <li><a href="tasks.html" class="active">Roadmap & Tasks</a></li>
+            <li><a href="research.html">OS Research</a></li>
+            <li><a href="memory.html">AI Memory Hub</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="page-header">
+        <div class="badge">Document 3 of 5 • Implementation Roadmap</div>
+        <h1>Iterative Task Checklist & Verification Plan</h1>
+        <p class="subtitle">
+            A comprehensive, component-level breakdown of implementation tasks. AI agents must execute and verify these items systematically during planning and coding phases.
+        </p>
+    </div>
+
+    <div class="controls-bar">
+        <span class="filter-label">Filter by Phase:</span>
+        <div class="filter-group">
+            <button class="btn-filter active" onclick="filterTasks('all')">All Phases</button>
+            <button class="btn-filter" onclick="filterTasks('phase1')">Phase 1: Core Engine</button>
+            <button class="btn-filter" onclick="filterTasks('phase2')">Phase 2: Linux Desktop</button>
+            <button class="btn-filter" onclick="filterTasks('phase3')">Phase 3: Android Mobile</button>
+            <button class="btn-filter" onclick="filterTasks('phase4')">Phase 4: File Streams</button>
+        </div>
+    </div>
+
+    <!-- Phase 1 -->
+    <div class="task-section" data-phase="phase1">
+        <div class="phase-header">
+            <div class="phase-title">Phase 1: Shared P2P Core & FFI Bridge (`shunkan-core`)</div>
+            <span class="phase-badge">Foundation</span>
+        </div>
+
+        <div class="task-card">
+            <div class="task-top">
+                <div class="task-title-wrap">
+                    <input type="checkbox" class="task-checkbox" id="t1" onchange="saveState(this)">
+                    <label class="task-title" for="t1">TASK-101: Bootstrap Rust Workspace & UniFFI Scaffolding</label>
+                </div>
+                <span class="task-status status-todo">To Do</span>
+            </div>
+            <div class="task-desc">
+                Initialize the `core/` Rust library with Cargo workspace configuration. Setup `uniffi` dependency and create basic `discovery.rs`, `transport.rs`, and `protocol.rs` modules with a stub `hello_shunkan()` export to verify Kotlin binding generation.
+            </div>
+            <div class="task-meta">
+                <div class="meta-box">
+                    <span class="meta-label">Verification Command</span>
+                    <code>cd core && cargo build && cargo test && cargo run --bin uniffi-bindgen generate --library target/debug/libshunkan_core.so --language kotlin --out-dir ../mobile-android/app/src/main/java</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="task-card">
+            <div class="task-top">
+                <div class="task-title-wrap">
+                    <input type="checkbox" class="task-checkbox" id="t2" onchange="saveState(this)">
+                    <label class="task-title" for="t2">TASK-102: Implement Zero-Config mDNS Discovery Engine</label>
+                </div>
+                <span class="task-status status-todo">To Do</span>
+            </div>
+            <div class="task-desc">
+                Integrate `mdns-sd` and `local-ip-address` to broadcast service record `_shunkan-sync._udp.local` containing hostname, OS type (`Linux` / `Android`), and active QUIC port. Build background listener that emits discovered/lost peer events.
+            </div>
+            <div class="task-meta">
+                <div class="meta-box">
+                    <span class="meta-label">Verification Command</span>
+                    <code>cargo test -p shunkan-core --test test_mdns_peer_discovery -- --nocapture</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="task-card">
+            <div class="task-top">
+                <div class="task-title-wrap">
+                    <input type="checkbox" class="task-checkbox" id="t3" onchange="saveState(this)">
+                    <label class="task-title" for="t3">TASK-103: Implement QUIC Multiplexed Transport & E2E Handshake</label>
+                </div>
+                <span class="task-status status-todo">To Do</span>
+            </div>
+            <div class="task-desc">
+                Setup `quinn` server and client endpoints with `rustls` self-signed TLS certificates. Implement PIN-verified Diffie-Hellman (`x25519-dalek`) key exchange that stores mutual peer public keys in local persistent storage.
+            </div>
+            <div class="task-meta">
+                <div class="meta-box">
+                    <span class="meta-label">Verification Command</span>
+                    <code>cargo test -p shunkan-core --test test_quic_encrypted_handshake -- --nocapture</code>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 2 -->
+    <div class="task-section" data-phase="phase2">
+        <div class="phase-header">
+            <div class="phase-title">Phase 2: Linux Desktop & Wayland/X11 Tray (`desktop-linux`)</div>
+            <span class="phase-badge">Desktop UI</span>
+        </div>
+
+        <div class="task-card">
+            <div class="task-top">
+                <div class="task-title-wrap">
+                    <input type="checkbox" class="task-checkbox" id="t4" onchange="saveState(this)">
+                    <label class="task-title" for="t4">TASK-201: Initialize Tauri v2 App & System Tray Daemon</label>
+                </div>
+                <span class="task-status status-todo">To Do</span>
+            </div>
+            <div class="task-desc">
+                Create Tauri v2 project under `desktop-linux/`. Configure `tauri-plugin-system-tray` to hide main window on boot, display status menu in Linux system tray, and start embedded `shunkan-core` background thread.
+            </div>
+            <div class="task-meta">
+                <div class="meta-box">
+                    <span class="meta-label">Verification Command</span>
+                    <code>cd desktop-linux && cargo check && npm run tauri build -- --debug</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="task-card">
+            <div class="task-top">
+                <div class="task-title-wrap">
+                    <input type="checkbox" class="task-checkbox" id="t5" onchange="saveState(this)">
+                    <label class="task-title" for="t5">TASK-202: Linux Multi-Session Clipboard Listener (Wayland + X11)</label>
+                </div>
+                <span class="task-status status-todo">To Do</span>
+            </div>
+            <div class="task-desc">
+                Build clipboard adapter using `arboard` for X11 sessions and `wl-clipboard-rs` / `zbus` (XDG Desktop Portal) for Wayland. When local clipboard changes, push `ClipboardItem` protobuf frame to `shunkan-core` broadcasting queue.
+            </div>
+            <div class="task-meta">
+                <div class="meta-box">
+                    <span class="meta-label">Verification Command</span>
+                    <code>cargo test -p desktop-linux --test test_linux_clipboard_capture -- --nocapture</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="task-card">
+            <div class="task-top">
+                <div class="task-title-wrap">
+                    <input type="checkbox" class="task-checkbox" id="t6" onchange="saveState(this)">
+                    <label class="task-title" for="t6">TASK-203: Glassmorphic Command Palette & Hotkey Auto-Paste</label>
+                </div>
+                <span class="task-status status-todo">To Do</span>
+            </div>
+            <div class="task-desc">
+                Register global shortcut `Super + V` (`tauri-plugin-global-shortcut`) to display searchable history UI. When item is clicked/selected, use `enigo` / `wtype` to simulate `Ctrl+Shift+V` / `Ctrl+V` keystroke in target window.
+            </div>
+            <div class="task-meta">
+                <div class="meta-box">
+                    <span class="meta-label">Verification Command</span>
+                    <code>npm run dev (Manual verify: press Super+V, select item, ensure text pastes into terminal)</code>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 3 -->
+    <div class="task-section" data-phase="phase3">
+        <div class="phase-header">
+            <div class="phase-title">Phase 3: Android Native Mobile App & OS Hooks (`mobile-android`)</div>
+            <span class="phase-badge">Mobile UI</span>
+        </div>
+
+        <div class="task-card">
+            <div class="task-top">
+                <div class="task-title-wrap">
+                    <input type="checkbox" class="task-checkbox" id="t7" onchange="saveState(this)">
+                    <label class="task-title" for="t7">TASK-301: Setup Android Studio Project & Embed `libshunkan_core.so`</label>
+                </div>
+                <span class="task-status status-todo">To Do</span>
+            </div>
+            <div class="task-desc">
+                Configure `build.gradle.kts` with NDK support. Build `libshunkan_core.so` for `arm64-v8a` and `x86_64` and integrate generated UniFFI Kotlin bindings into `com.shunkan.sync.core`.
+            </div>
+            <div class="task-meta">
+                <div class="meta-box">
+                    <span class="meta-label">Verification Command</span>
+                    <code>cd mobile-android && ./gradlew assembleDebug && ./gradlew testDebugUnitTest</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="task-card">
+            <div class="task-top">
+                <div class="task-title-wrap">
+                    <input type="checkbox" class="task-checkbox" id="t8" onchange="saveState(this)">
+                    <label class="task-title" for="t8">TASK-302: Android Quick Settings Tile (`TileService`) & Share Sheet Target</label>
+                </div>
+                <span class="task-status status-todo">To Do</span>
+            </div>
+            <div class="task-desc">
+                Implement `ShunkanTileService` enabling users to tap notification tile to push current clipboard or fetch latest item from Linux. Implement `ShareActivity` handling `ACTION_SEND` intents to immediately broadcast shared text/files to Linux peers.
+            </div>
+            <div class="task-meta">
+                <div class="meta-box">
+                    <span class="meta-label">Verification Command</span>
+                    <code>./gradlew installDebug (Manual verify: pull notification bar, tap Shunkan Tile, verify instant sync)</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="task-card">
+            <div class="task-top">
+                <div class="task-title-wrap">
+                    <input type="checkbox" class="task-checkbox" id="t9" onchange="saveState(this)">
+                    <label class="task-title" for="t9">TASK-303: Optional Power-User Custom Keyboard (`InputMethodService`)</label>
+                </div>
+                <span class="task-status status-todo">To Do</span>
+            </div>
+            <div class="task-desc">
+                Implement lightweight `ShunkanIME` keyboard overlay. Register `ClipboardManager.OnPrimaryClipChangedListener` inside keyboard context to enable true, seamless background clipboard auto-capture on Android 10+ devices without Shizuku or root.
+            </div>
+            <div class="task-meta">
+                <div class="meta-box">
+                    <span class="meta-label">Verification Command</span>
+                    <code>./gradlew connectedAndroidTest</code>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase 4 -->
+    <div class="task-section" data-phase="phase4">
+        <div class="phase-header">
+            <div class="phase-title">Phase 4: High-Speed File Streaming & Polish</div>
+            <span class="phase-badge">Performance</span>
+        </div>
+
+        <div class="task-card">
+            <div class="task-top">
+                <div class="task-title-wrap">
+                    <input type="checkbox" class="task-checkbox" id="t10" onchange="saveState(this)">
+                    <label class="task-title" for="t10">TASK-401: Implement Chunked Async File Streaming over QUIC</label>
+                </div>
+                <span class="task-status status-todo">To Do</span>
+            </div>
+            <div class="task-desc">
+                Add file transfer protocol frames inside `shunkan-core`. Stream binary files in 64KB chunks with SHA-256 rolling checks. Implement transfer progress event broadcasting and auto-resume from last byte offset on reconnect.
+            </div>
+            <div class="task-meta">
+                <div class="meta-box">
+                    <span class="meta-label">Verification Command</span>
+                    <code>cargo test -p shunkan-core --test test_large_file_quic_stream -- --nocapture</code>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer>
+    Project Shunkan Documentation Hub • Designed for Autonomous AI Development & Iteration
+</footer>
+
+<script>
+    // Load persisted checkbox states
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.task-checkbox').forEach(cb => {
+            const state = localStorage.getItem('shunkan_task_' + cb.id);
+            if (state === 'checked') {
+                cb.checked = true;
+                const statusBadge = cb.closest('.task-top').querySelector('.task-status');
+                statusBadge.textContent = 'Completed';
+                statusBadge.className = 'task-status status-completed';
+            }
+        });
+    });
+
+    function saveState(cb) {
+        const statusBadge = cb.closest('.task-top').querySelector('.task-status');
+        if (cb.checked) {
+            localStorage.setItem('shunkan_task_' + cb.id, 'checked');
+            statusBadge.textContent = 'Completed';
+            statusBadge.className = 'task-status status-completed';
+        } else {
+            localStorage.removeItem('shunkan_task_' + cb.id);
+            statusBadge.textContent = 'To Do';
+            statusBadge.className = 'task-status status-todo';
+        }
+    }
+
+    function filterTasks(phase) {
+        document.querySelectorAll('.btn-filter').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+
+        document.querySelectorAll('.task-section').forEach(sec => {
+            if (phase === 'all' || sec.dataset.phase === phase) {
+                sec.style.display = 'block';
+            } else {
+                sec.style.display = 'none';
+            }
+        });
+    }
+</script>
+
+</body>
+</html>

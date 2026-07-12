@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tech Stack & Architecture — Project Shunkan (瞬間)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #080b11;
+            --bg-surface: #101622;
+            --bg-surface-hover: #161e2f;
+            --bg-glass: rgba(16, 22, 34, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-glow: rgba(0, 229, 255, 0.3);
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent-cyan: #00e5ff;
+            --accent-indigo: #6366f1;
+            --accent-purple: #a855f7;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(circle at 15% 20%, rgba(99, 102, 241, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 85% 80%, rgba(0, 229, 255, 0.1) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        /* Top Navigation */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 800;
+            font-size: 1.25rem;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-indigo));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-weight: 900;
+            font-size: 1.1rem;
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+        }
+
+        nav ul {
+            display: flex;
+            list-style: none;
+            gap: 0.5rem;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        nav a:hover {
+            color: var(--text-main);
+            background: var(--bg-surface-hover);
+        }
+
+        nav a.active {
+            color: var(--accent-cyan);
+            background: rgba(0, 229, 255, 0.1);
+            border-color: rgba(0, 229, 255, 0.2);
+            box-shadow: 0 0 12px rgba(0, 229, 255, 0.15);
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+            flex: 1;
+            width: 100%;
+        }
+
+        .page-header {
+            margin-bottom: 3rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.85rem;
+            border-radius: 9999px;
+            background: rgba(0, 229, 255, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+
+        h1 {
+            font-size: 2.75rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 1rem;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 800px;
+            font-weight: 400;
+        }
+
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.75rem;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.18);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-indigo));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .col-12 { grid-column: span 12; }
+        .col-8 { grid-column: span 8; }
+        .col-6 { grid-column: span 6; }
+        .col-4 { grid-column: span 4; }
+
+        @media (max-width: 900px) {
+            .col-8, .col-6, .col-4 { grid-column: span 12; }
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 1.25rem 0 0.5rem;
+            color: var(--accent-cyan);
+        }
+
+        p, li {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        ul {
+            padding-left: 1.5rem;
+            margin-top: 0.5rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        code {
+            font-family: 'Fira Code', monospace;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85em;
+            color: var(--accent-cyan);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        pre {
+            background: #06090e;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 1.25rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.88rem;
+            color: #e2e8f0;
+            line-height: 1.5;
+        }
+
+        .arch-box {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px dashed rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        .stack-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin-bottom: 0.75rem;
+        }
+
+        .stack-icon {
+            font-size: 1.5rem;
+            background: rgba(99, 102, 241, 0.15);
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .stack-info h4 {
+            color: var(--text-main);
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.2rem;
+        }
+
+        .stack-info span {
+            font-size: 0.8rem;
+            color: var(--accent-indigo);
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        footer {
+            border-top: 1px solid var(--border-color);
+            padding: 2rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: var(--bg-surface);
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <div class="logo-icon">瞬</div>
+        <span>Shunkan P2P Engine</span>
+    </div>
+    <nav>
+        <ul>
+            <li><a href="prd.html">PRD</a></li>
+            <li><a href="stack.html" class="active">Tech Stack</a></li>
+            <li><a href="tasks.html">Roadmap & Tasks</a></li>
+            <li><a href="research.html">OS Research</a></li>
+            <li><a href="memory.html">AI Memory Hub</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main>
+    <div class="page-header">
+        <div class="badge">Document 2 of 5 • Technical Architecture</div>
+        <h1>Technology Stack & System Architecture</h1>
+        <p class="subtitle">
+            A deep-dive into the hybrid architecture combining a high-performance Rust networking engine (`shunkan-core`) with native OS frontends (`Tauri v2` on Linux and `Jetpack Compose` on Android).
+        </p>
+    </div>
+
+    <div class="section-grid">
+        <div class="card col-12">
+            <h2>🏆 Recommended Architecture & Comparative Justification</h2>
+            <p>
+                When architecting a tool that must run silently in the background on both Linux desktops and Android phones while maintaining near-zero latency and high memory efficiency, architectural choice determines success or failure:
+            </p>
+            <div class="section-grid" style="margin-bottom: 0; gap: 1.25rem; margin-top: 1.25rem;">
+                <div class="card col-4" style="border-color: rgba(0, 229, 255, 0.4); background: rgba(0, 229, 255, 0.03);">
+                    <div style="color: var(--accent-cyan); font-weight: 700; font-size: 0.85rem; text-transform: uppercase; margin-bottom: 0.5rem;">⭐ Selected Stack</div>
+                    <h3 style="margin-top:0; color: var(--text-main);">Rust Core + Native UI (Tauri / Kotlin)</h3>
+                    <p>
+                        <strong>Shared Engine:</strong> Pure Rust (`shunkan-core`) compiled to native library (`libshunkan_core.so`) for Android via `UniFFI`, and directly linked into Tauri v2 on Linux.
+                        <br><br><strong>Why Selected:</strong> Zero-copy async streams (< 15MB RAM footprint on Linux), sub-millisecond local P2P encryption via `quinn`, and 100% native look & feel on both Android (`Jetpack Compose`) and Linux (`Tauri/GTK4`).
+                    </p>
+                </div>
+                <div class="card col-4" style="background: rgba(255, 255, 255, 0.01);">
+                    <div style="color: var(--text-muted); font-weight: 700; font-size: 0.85rem; text-transform: uppercase; margin-bottom: 0.5rem;">Alternative 2</div>
+                    <h3 style="margin-top:0; color: var(--text-main);">Flutter + Rust (`flutter_rust_bridge`)</h3>
+                    <p>
+                        <strong>Why Reconsidered:</strong> While Flutter allows a single UI codebase across Linux and Android, Flutter Desktop on Linux consumes ~70-100MB of RAM idle, and custom Android Quick Settings / Share Sheet targets still require writing substantial native Kotlin boilerplate regardless.
+                    </p>
+                </div>
+                <div class="card col-4" style="background: rgba(255, 255, 255, 0.01);">
+                    <div style="color: var(--text-muted); font-weight: 700; font-size: 0.85rem; text-transform: uppercase; margin-bottom: 0.5rem;">Alternative 3</div>
+                    <h3 style="margin-top:0; color: var(--text-main);">Pure Go (LocalSend Style)</h3>
+                    <p>
+                        <strong>Why Reconsidered:</strong> Go (`gomobile`) works well for networking, but its garbage collector introduces non-deterministic memory spikes on Linux desktop tray daemons, and CGO/Wayland clipboard bindings on Linux are significantly more mature in the Rust ecosystem (`wl-clipboard-rs`, `zbus`, `arboard`).
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card col-6">
+            <h2>🦀 Shared Core Engine (`shunkan-core`)</h2>
+            <p>
+                The foundational Rust crate shared by both operating systems. It decouples networking, cryptography, and protocol handling entirely from UI frameworks.
+            </p>
+            <div style="margin-top: 1rem;">
+                <div class="stack-item">
+                    <div class="stack-icon">⚡</div>
+                    <div class="stack-info">
+                        <span>Transport & Multiplexing</span>
+                        <h4>Quinn (QUIC Protocol over UDP)</h4>
+                        <p>Provides 0-RTT/1-RTT connection setup and concurrent streams so lightweight clipboard text items never get blocked behind a 5GB file transfer.</p>
+                    </div>
+                </div>
+                <div class="stack-item">
+                    <div class="stack-icon">🔍</div>
+                    <div class="stack-info">
+                        <span>Local Discovery</span>
+                        <h4>mdns-sd & local-ip-address</h4>
+                        <p>Zero-configuration multicast DNS advertising and discovering `_shunkan-sync._udp.local` service records across local Wi-Fi / subnet interfaces.</p>
+                    </div>
+                </div>
+                <div class="stack-item">
+                    <div class="stack-icon">🔐</div>
+                    <div class="stack-info">
+                        <span>Cryptography & Handshake</span>
+                        <h4>rustls + x25519-dalek + ring</h4>
+                        <p>Modern TLS 1.3 encryption using Diffie-Hellman ephemeral key exchange verified via 6-digit PIN / QR pairing.</p>
+                    </div>
+                </div>
+                <div class="stack-item">
+                    <div class="stack-icon">📦</div>
+                    <div class="stack-info">
+                        <span>Serialization & FFI</span>
+                        <h4>Serde + UniFFI</h4>
+                        <p>High-speed binary and JSON serialization (`serde_json` / `bincode`) auto-generating clean, type-safe Kotlin interface bindings via Mozilla's `UniFFI`.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card col-6">
+            <h2>🐧 Linux Desktop Architecture (`desktop-linux`)</h2>
+            <p>
+                Built to run silently in the system tray and replace the native clipboard manager on both X11 and Wayland compositors.
+            </p>
+            <div style="margin-top: 1rem;">
+                <div class="stack-item">
+                    <div class="stack-icon">🖼️</div>
+                    <div class="stack-info">
+                        <span>Desktop Framework</span>
+                        <h4>Tauri v2 (Rust + Webview / Native Tray)</h4>
+                        <p>Provides an ultra-lightweight system tray icon (`tauri-plugin-system-tray`) and pops up a glassmorphic HTML/CSS/JS command palette on `Super + V` hotkey.</p>
+                    </div>
+                </div>
+                <div class="stack-item">
+                    <div class="stack-icon">📋</div>
+                    <div class="stack-info">
+                        <span>Clipboard OS Bindings</span>
+                        <h4>arboard + wl-clipboard-rs + zbus</h4>
+                        <p>Auto-detects `$XDG_SESSION_TYPE`. Uses `arboard` on X11, `wl-clipboard-rs` for `wlr-data-control`, and `zbus` for XDG Desktop Portal clipboard IPC on strict Wayland setups.</p>
+                    </div>
+                </div>
+                <div class="stack-item">
+                    <div class="stack-icon">⌨️</div>
+                    <div class="stack-info">
+                        <span>Global Hotkeys & Automation</span>
+                        <h4>tauri-plugin-global-shortcut + enigo</h4>
+                        <p>Listens for custom key combinations to trigger the clipboard history popup and synthesizes keypresses (`Ctrl+V`) when a user selects a history item to paste.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card col-12">
+            <h2>📱 Android Mobile Architecture (`mobile-android`)</h2>
+            <p>
+                Specifically crafted to comply with Android 10+ (API 29+) background restrictions without requiring root permissions, while offering optional power-user IME features.
+            </p>
+            <div class="section-grid" style="margin-bottom:0; margin-top: 1rem; gap: 1.25rem;">
+                <div class="card col-4" style="background: rgba(255,255,255,0.02);">
+                    <h3>Modern Native UI</h3>
+                    <p><strong>Kotlin + Jetpack Compose + Material 3:</strong> Fluid, reactive Android frontend that embeds `libshunkan_core.so` via `UniFFI`. Displays connection status, transfer speeds, and local clipboard history card grids.</p>
+                </div>
+                <div class="card col-4" style="background: rgba(255,255,255,0.02);">
+                    <h3>OS System Hooks</h3>
+                    <p><strong>AndroidX ShareTarget & TileService:</strong> Registers as a direct system share option (`Send to Linux Desktop`). Provides a Quick Settings tile in the notification shade to pull/push clipboard history in one tap.</p>
+                </div>
+                <div class="card col-4" style="background: rgba(255,255,255,0.02);">
+                    <h3>Optional Background IME</h3>
+                    <p><strong>Custom InputMethodService:</strong> For power users desiring true background auto-capture on Android 10+, provides an optional lightweight keyboard overlay with direct `ClipboardManager` listener access.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card col-12">
+            <h2>📂 Project Codebase Layout & Directory Structure</h2>
+            <p>
+                Future AI agents should maintain this clean, modular workspace hierarchy across all development stages:
+            </p>
+            <pre><code>/shunkan
+├── core/                        # Shared Rust P2P & Clipboard Engine (shunkan-core)
+│   ├── Cargo.toml
+│   ├── src/
+│   │   ├── lib.rs               # Core FFI exports via UniFFI
+│   │   ├── discovery.rs         # mDNS-SD local network broadcaster & listener
+│   │   ├── transport.rs         # QUIC / TLS 1.3 socket manager & stream multiplexer
+│   │   ├── protocol.rs          # Message frames (ClipboardItem, FileChunk, Handshake)
+│   │   ├── crypto.rs            # X25519 key exchange, PIN verification, cert storage
+│   │   └── history.rs           # SQLite / In-memory LRU clipboard history store
+│   └── uniffi/                  # UniFFI interface definition (.udl or macro-based)
+├── desktop-linux/               # Linux Desktop Application (Tauri v2 + Rust)
+│   ├── src-tauri/
+│   │   ├── Cargo.toml           # Links to ../core
+│   │   ├── src/
+│   │   │   ├── main.rs          # System tray bootstrap & hotkey registration
+│   │   │   ├── clipboard.rs     # X11/Wayland clipboard listener & auto-injector
+│   │   │   └── commands.rs      # Tauri IPC commands bridged to shunkan-core
+│   │   └── tauri.conf.json
+│   └── src/                     # HTML/CSS/JS Glassmorphic Command Palette UI
+│       ├── index.html
+│       ├── styles.css
+│       └── app.js
+└── mobile-android/              # Android Native Application (Kotlin + Jetpack Compose)
+    ├── build.gradle.kts
+    └── app/src/main/
+        ├── jniLibs/             # Compiled libshunkan_core.so (arm64-v8a, x86_64)
+        ├── java/com/shunkan/sync/
+        │   ├── MainActivity.kt  # Jetpack Compose UI (History, Pairing, Settings)
+        │   ├── ShareActivity.kt # Receives text/files from Android Share Sheet
+        │   ├── ShunkanTile.kt     # Quick Settings TileService for 1-tap sync
+        │   ├── ShunkanIME.kt      # Optional custom keyboard for true background sync
+        │   └── core/            # Auto-generated UniFFI Kotlin wrapper classes
+        └── res/                 # Vector drawables, themes, XML configs</code></pre>
+        </div>
+    </div>
+</main>
+
+<footer>
+    Project Shunkan Documentation Hub • Designed for Autonomous AI Development & Iteration
+</footer>
+
+</body>
+</html>
