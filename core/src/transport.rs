@@ -22,11 +22,12 @@
 
 use crate::crypto;
 use crate::identity::DeviceIdentity;
-use crate::protocol::{ClipboardItem, Message};
+use crate::protocol::{ClipboardItem, FileChunk, Message};
 use crate::trust::TrustStore;
 use anyhow::{Context, Result};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Maximum accepted size of a frame on the control channel.
 ///
@@ -57,12 +58,42 @@ pub const MAX_CONCURRENT_UNI_STREAMS: u32 = 16;
 /// all a well-behaved peer needs; the rest is slack for reconnection.
 pub const MAX_CONCURRENT_BIDI_STREAMS: u32 = 4;
 
-/// Build the quinn transport parameters shared by both endpoints.
-fn quinn_transport_config() -> Arc<quinn::TransportConfig> {
-    let mut config = quinn::TransportConfig::default();
-    config.max_concurrent_uni_streams(MAX_CONCURRENT_UNI_STREAMS.into());
-    config.max_concurrent_bidi_streams(MAX_CONCURRENT_BIDI_STREAMS.into());
-    Arc::new(config)
+/// Multiple of the keep-alive interval used as the idle timeout.
+///
+/// Three missed keep-alives before a connection is declared dead: long enough
+/// to ride out a brief Wi-Fi hiccup, short enough that a genuinely gone peer is
+/// noticed quickly.
+const IDLE_TIMEOUT_MULTIPLIER: u32 = 3;
+
+/// Build the quinn transport parameters for a given configuration.
+///
+/// `keep_alive_ms` was set, defaulted, and asserted in three tests, but never
+/// reached a `quinn::TransportConfig` — so a paired connection died at quinn's
+/// default idle timeout with nothing to notice or reconnect. It is applied here,
+/// along with a matching idle timeout.
+fn quinn_transport_config(config: &TransportConfig) -> Result<Arc<quinn::TransportConfig>> {
+    let mut quinn_config = quinn::TransportConfig::default();
+    quinn_config.max_concurrent_uni_streams(MAX_CONCURRENT_UNI_STREAMS.into());
+    quinn_config.max_concurrent_bidi_streams(MAX_CONCURRENT_BIDI_STREAMS.into());
+
+    if config.keep_alive_ms > 0 {
+        let interval = Duration::from_millis(config.keep_alive_ms);
+        quinn_config.keep_alive_interval(Some(interval));
+
+        let idle = interval
+            .checked_mul(IDLE_TIMEOUT_MULTIPLIER)
+            .context("keep_alive_ms is too large to derive an idle timeout from")?;
+        let idle: quinn::IdleTimeout = quinn::VarInt::try_from(idle.as_millis() as u64)
+            .map_err(|_| anyhow::anyhow!("keep_alive_ms is too large for a QUIC idle timeout"))?
+            .into();
+        quinn_config.max_idle_timeout(Some(idle));
+    } else {
+        // Explicitly disabled: no keep-alives, and no idle timeout to trip over.
+        quinn_config.keep_alive_interval(None);
+        quinn_config.max_idle_timeout(None);
+    }
+
+    Ok(Arc::new(quinn_config))
 }
 
 /// Reads length-prefixed frames into a reusable buffer with a hard ceiling.
@@ -152,7 +183,7 @@ impl TransportServer {
     ) -> Result<Self> {
         let mut server_config = crypto::quinn_server_config(identity, trust)
             .context("Failed to build QUIC server config from device identity")?;
-        server_config.transport_config(quinn_transport_config());
+        server_config.transport_config(quinn_transport_config(&config)?);
 
         let endpoint = quinn::Endpoint::server(server_config, config.bind_addr)
             .context("Failed to bind QUIC endpoint")?;
@@ -218,15 +249,40 @@ impl TransportClient {
         )
     }
 
+    /// Create a client with explicit transport parameters (keep-alive, limits).
+    pub fn with_config(
+        config: &TransportConfig,
+        identity: &DeviceIdentity,
+        trust: Arc<TrustStore>,
+    ) -> Result<Self> {
+        Self::bind_with_config(
+            "0.0.0.0:0".parse().expect("valid wildcard address"),
+            config,
+            identity,
+            trust,
+        )
+    }
+
     /// Create a transport client bound to a specific local address.
     pub fn bind(
         bind_addr: SocketAddr,
         identity: &DeviceIdentity,
         trust: Arc<TrustStore>,
     ) -> Result<Self> {
+        Self::bind_with_config(bind_addr, &TransportConfig::default(), identity, trust)
+    }
+
+    /// Create a client bound to a specific address with explicit transport
+    /// parameters.
+    pub fn bind_with_config(
+        bind_addr: SocketAddr,
+        config: &TransportConfig,
+        identity: &DeviceIdentity,
+        trust: Arc<TrustStore>,
+    ) -> Result<Self> {
         let mut client_config = crypto::quinn_client_config(identity, trust)
             .context("Failed to build QUIC client config")?;
-        client_config.transport_config(quinn_transport_config());
+        client_config.transport_config(quinn_transport_config(config)?);
 
         let mut endpoint =
             quinn::Endpoint::client(bind_addr).context("Failed to create client endpoint")?;
@@ -502,6 +558,136 @@ pub async fn send_framed_within(
 /// stream — it reuses its buffer instead of allocating per frame.
 pub async fn recv_framed(recv: &mut quinn::RecvStream) -> Result<Message> {
     FrameReader::new(MAX_FILE_FRAME_SIZE).read(recv).await
+}
+
+/// The metadata preceding a raw chunk payload on a file transfer stream.
+///
+/// Small and fixed-shape, so encoding it costs nothing. The chunk's *data* does
+/// not appear here — it follows on the wire verbatim.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ChunkHeader {
+    /// Identifier for the file transfer session.
+    pub transfer_id: String,
+    /// Original filename.
+    pub filename: String,
+    /// Total file size in bytes.
+    pub total_size: u64,
+    /// Zero-based chunk index.
+    pub chunk_index: u32,
+    /// Total number of chunks.
+    pub total_chunks: u32,
+    /// BLAKE3 hash of this chunk's data (INV-05).
+    pub chunk_hash: String,
+    /// Length of the payload that follows.
+    pub data_len: u32,
+}
+
+/// Largest header a peer may declare, so a malicious length cannot allocate.
+const MAX_CHUNK_HEADER_SIZE: usize = 8 * 1024;
+
+/// Send a file chunk with its payload written straight to the wire.
+///
+/// The wire form is `[u32 header_len][postcard header][payload bytes]`. Chunk
+/// data never passes through a serializer, so a transfer costs exactly its own
+/// size plus a small constant per chunk — the "better still" half of F-20's fix.
+pub async fn send_chunk_raw(send: &mut quinn::SendStream, chunk: &FileChunk) -> Result<()> {
+    let data_len = u32::try_from(chunk.data.len())
+        .map_err(|_| anyhow::anyhow!("Chunk of {} bytes is too large", chunk.data.len()))?;
+    anyhow::ensure!(
+        chunk.data.len() <= MAX_FILE_FRAME_SIZE,
+        "Refusing to send a {} byte chunk (max {})",
+        chunk.data.len(),
+        MAX_FILE_FRAME_SIZE
+    );
+
+    let header = ChunkHeader {
+        transfer_id: chunk.transfer_id.clone(),
+        filename: chunk.filename.clone(),
+        total_size: chunk.total_size,
+        chunk_index: chunk.chunk_index,
+        total_chunks: chunk.total_chunks,
+        chunk_hash: chunk.chunk_hash.clone(),
+        data_len,
+    };
+    let encoded = postcard::to_stdvec(&header)
+        .map_err(|e| anyhow::anyhow!("Failed to encode chunk header: {}", e))?;
+    anyhow::ensure!(
+        encoded.len() <= MAX_CHUNK_HEADER_SIZE,
+        "Chunk header of {} bytes exceeds the {} byte limit",
+        encoded.len(),
+        MAX_CHUNK_HEADER_SIZE
+    );
+
+    send.write_all(&(encoded.len() as u32).to_be_bytes())
+        .await
+        .context("Failed to write chunk header length")?;
+    send.write_all(&encoded)
+        .await
+        .context("Failed to write chunk header")?;
+    send.write_all(&chunk.data)
+        .await
+        .context("Failed to write chunk payload")?;
+    Ok(())
+}
+
+/// Receive a chunk written by [`send_chunk_raw`].
+///
+/// `buf` is reused across calls so a transfer allocates once, not once per
+/// chunk. Both declared lengths are checked against their ceilings before any
+/// memory is reserved.
+pub async fn recv_chunk_raw(
+    recv: &mut quinn::RecvStream,
+    buf: &mut Vec<u8>,
+) -> Result<Option<FileChunk>> {
+    let mut len_buf = [0u8; 4];
+    // A clean end of stream is how a transfer finishes, not an error.
+    match recv.read_exact(&mut len_buf).await {
+        Ok(()) => {}
+        Err(quinn::ReadExactError::FinishedEarly(0)) => return Ok(None),
+        Err(e) => return Err(anyhow::Error::new(e).context("Failed to read chunk header length")),
+    }
+
+    let header_len = u32::from_be_bytes(len_buf) as usize;
+    anyhow::ensure!(
+        header_len <= MAX_CHUNK_HEADER_SIZE,
+        "Chunk header too large: {} bytes (max {})",
+        header_len,
+        MAX_CHUNK_HEADER_SIZE
+    );
+
+    buf.clear();
+    buf.resize(header_len, 0);
+    recv.read_exact(buf)
+        .await
+        .context("Failed to read chunk header")?;
+    let header: ChunkHeader = postcard::from_bytes(buf)
+        .map_err(|e| anyhow::anyhow!("Failed to decode chunk header: {}", e))?;
+
+    let data_len = header.data_len as usize;
+    anyhow::ensure!(
+        data_len <= MAX_FILE_FRAME_SIZE,
+        "Chunk payload too large: {} bytes (max {})",
+        data_len,
+        MAX_FILE_FRAME_SIZE
+    );
+
+    buf.clear();
+    buf.resize(data_len, 0);
+    recv.read_exact(buf)
+        .await
+        .context("Failed to read chunk payload")?;
+
+    let chunk = FileChunk {
+        transfer_id: header.transfer_id,
+        filename: header.filename,
+        total_size: header.total_size,
+        chunk_index: header.chunk_index,
+        total_chunks: header.total_chunks,
+        chunk_hash: header.chunk_hash,
+        data: std::mem::take(buf),
+    };
+
+    Ok(Some(chunk))
 }
 
 #[cfg(test)]
@@ -898,6 +1084,176 @@ mod tests {
             }
             other => panic!("expected two clipboard messages, got {:?}", other),
         }
+
+        conn.close();
+        client.shutdown();
+    }
+
+    #[test]
+    fn test_keep_alive_reaches_the_quinn_transport_config() {
+        // The F-10 regression: keep_alive_ms was set, defaulted, and asserted in
+        // three tests, but never applied — so a paired connection died at
+        // quinn's default idle timeout with nothing to reconnect it.
+        let config = TransportConfig {
+            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            keep_alive_ms: 5000,
+        };
+        assert!(quinn_transport_config(&config).is_ok());
+
+        // Zero disables it rather than producing a zero-length timeout.
+        let disabled = TransportConfig {
+            keep_alive_ms: 0,
+            ..config.clone()
+        };
+        assert!(quinn_transport_config(&disabled).is_ok());
+
+        // An absurd value is rejected instead of overflowing.
+        let absurd = TransportConfig {
+            keep_alive_ms: u64::MAX,
+            ..config
+        };
+        assert!(quinn_transport_config(&absurd).is_err());
+    }
+
+    /// An idle connection must survive longer than quinn's default, because the
+    /// keep-alive now actually reaches the transport config.
+    #[tokio::test]
+    async fn test_idle_connection_survives_on_keep_alive() {
+        let (identity, client_identity, trust, server, addr) = paired_server().await;
+
+        let server_task = tokio::spawn(async move {
+            let conn = server.accept().await.unwrap().expect("no incoming");
+            let mut control = conn.accept_control().await.unwrap();
+            let first = control.recv().await;
+            // Sit idle, then expect the connection to still be usable.
+            tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+            let second = control.recv().await;
+            conn.close();
+            server.shutdown();
+            (first, second)
+        });
+
+        let config = TransportConfig {
+            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            keep_alive_ms: 100,
+        };
+        let client = TransportClient::with_config(&config, &client_identity, trust).unwrap();
+        let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
+        let mut control = conn.open_control().await.unwrap();
+
+        control.send(&Message::Ping { timestamp: 1 }).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+        control.send(&Message::Ping { timestamp: 2 }).await.unwrap();
+
+        let (first, second) = server_task.await.unwrap();
+        assert_eq!(first.unwrap(), Message::Ping { timestamp: 1 });
+        assert_eq!(
+            second.unwrap(),
+            Message::Ping { timestamp: 2 },
+            "the connection must survive an idle period"
+        );
+
+        conn.close();
+        client.shutdown();
+    }
+
+    /// A whole transfer over a dedicated stream, with payloads written raw.
+    #[tokio::test]
+    async fn test_raw_chunk_transfer_round_trips() {
+        let (identity, client_identity, trust, server, addr) = paired_server().await;
+
+        let payload: Vec<u8> = (0..5000u32).map(|i| (i % 256) as u8).collect();
+        let expected = payload.clone();
+
+        let server_task = tokio::spawn(async move {
+            let conn = server.accept().await.unwrap().expect("no incoming");
+            let mut stream = conn.accept_file_stream().await.unwrap();
+
+            let mut buf = Vec::new();
+            let mut reassembler: Option<crate::transfer::FileReassembler> = None;
+            while let Some(chunk) = recv_chunk_raw(&mut stream, &mut buf).await.unwrap() {
+                match reassembler.as_mut() {
+                    None => {
+                        reassembler = Some(crate::transfer::FileReassembler::new(&chunk).unwrap())
+                    }
+                    Some(r) => {
+                        r.accept(&chunk).unwrap();
+                    }
+                }
+            }
+
+            conn.close();
+            server.shutdown();
+            reassembler.unwrap().finish().unwrap()
+        });
+
+        let client = TransportClient::new(&client_identity, trust).unwrap();
+        let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
+        let mut stream = conn.open_file_stream().await.unwrap();
+
+        let pieces: Vec<_> = crate::hashing::chunk_and_hash_with_size(&payload, 1024);
+        let total = pieces.len() as u32;
+        for (index, (data, _)) in pieces.into_iter().enumerate() {
+            let chunk = FileChunk::new(
+                "tx-raw",
+                "blob.bin",
+                payload.len() as u64,
+                index as u32,
+                total,
+                data,
+            );
+            send_chunk_raw(&mut stream, &chunk).await.unwrap();
+        }
+        stream.finish().unwrap();
+
+        assert_eq!(server_task.await.unwrap(), expected);
+
+        conn.close();
+        client.shutdown();
+    }
+
+    /// A header claiming a huge payload must not become an allocation.
+    #[tokio::test]
+    async fn test_raw_chunk_rejects_an_oversized_declared_payload() {
+        let (identity, client_identity, trust, server, addr) = paired_server().await;
+
+        let server_task = tokio::spawn(async move {
+            let conn = server.accept().await.unwrap().expect("no incoming");
+            let mut stream = conn.accept_file_stream().await.unwrap();
+            let mut buf = Vec::new();
+            let result = recv_chunk_raw(&mut stream, &mut buf).await;
+            conn.close();
+            server.shutdown();
+            result
+        });
+
+        let client = TransportClient::new(&client_identity, trust).unwrap();
+        let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
+        let mut stream = conn.open_file_stream().await.unwrap();
+
+        let header = ChunkHeader {
+            transfer_id: "tx".into(),
+            filename: "lie.bin".into(),
+            total_size: u64::MAX,
+            chunk_index: 0,
+            total_chunks: 1,
+            chunk_hash: "00".into(),
+            data_len: u32::MAX,
+        };
+        let encoded = postcard::to_stdvec(&header).unwrap();
+        stream
+            .write_all(&(encoded.len() as u32).to_be_bytes())
+            .await
+            .unwrap();
+        stream.write_all(&encoded).await.unwrap();
+        stream.finish().unwrap();
+
+        let err = server_task.await.unwrap().expect_err("must be rejected");
+        assert!(
+            err.to_string().contains("payload too large"),
+            "unexpected error: {}",
+            err
+        );
 
         conn.close();
         client.shutdown();

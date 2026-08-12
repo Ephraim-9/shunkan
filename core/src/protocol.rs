@@ -1,7 +1,23 @@
 //! Wire protocol message types for Shunkan P2P communication.
 //!
-//! All messages are serialized as JSON over QUIC streams. The [`Message`]
-//! enum is the top-level frame type that wraps all payload variants.
+//! The [`Message`] enum is the top-level frame type that wraps all payload
+//! variants. Messages are serialized with [`postcard`] and framed with a 4-byte
+//! big-endian length prefix.
+//!
+//! ## Why not JSON
+//!
+//! `serde_json` renders `Vec<u8>` as a decimal array — `[255,0,17,…]` — so a
+//! file chunk or an image cost roughly 3.6 bytes of wire per byte of data, plus
+//! parse cost on both ends. That directly contradicted the "full Wi-Fi 6
+//! bandwidth" goal and multiplied the memory footprint of every in-flight
+//! message. `test_binary_codec_does_not_inflate_binary_payloads` measures it.
+//!
+//! Postcard is a compact, non-self-describing format: the types survive the
+//! swap unchanged, only the encoding differs.
+//!
+//! For file transfers the payload does not pass through a serializer at all —
+//! see [`crate::transport::send_chunk_raw`], which writes a small postcard
+//! header followed by the chunk's bytes verbatim.
 
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
@@ -200,7 +216,7 @@ pub struct TransferAck {
 
 /// Top-level wire protocol message envelope.
 ///
-/// All messages are serialized as JSON and framed with a 4-byte big-endian
+/// All messages are serialized with postcard and framed with a 4-byte big-endian
 /// length prefix when sent over QUIC streams.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Message {
@@ -249,25 +265,26 @@ pub enum Message {
 }
 
 impl Message {
-    /// Serialize this message to JSON bytes.
+    /// Serialize this message to postcard bytes.
     pub fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
-        let json = serde_json::to_vec(self)?;
-        Ok(json)
+        postcard::to_stdvec(self).map_err(|e| anyhow::anyhow!("Failed to encode message: {}", e))
     }
 
-    /// Deserialize a message from JSON bytes.
+    /// Deserialize a message from postcard bytes.
     pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
-        let msg = serde_json::from_slice(bytes)?;
-        Ok(msg)
+        postcard::from_bytes(bytes).map_err(|e| anyhow::anyhow!("Failed to decode message: {}", e))
     }
 
     /// Serialize with a 4-byte big-endian length prefix for framing.
     pub fn to_framed_bytes(&self) -> anyhow::Result<Vec<u8>> {
-        let json = serde_json::to_vec(self)?;
-        let len = json.len() as u32;
-        let mut buf = Vec::with_capacity(4 + json.len());
+        let body = self.to_bytes()?;
+        let len = u32::try_from(body.len()).map_err(|_| {
+            anyhow::anyhow!("Message of {} bytes exceeds the frame prefix", body.len())
+        })?;
+
+        let mut buf = Vec::with_capacity(4 + body.len());
         buf.extend_from_slice(&len.to_be_bytes());
-        buf.extend_from_slice(&json);
+        buf.extend_from_slice(&body);
         Ok(buf)
     }
 }
@@ -310,13 +327,101 @@ mod tests {
     #[test]
     fn test_handshake_carries_no_pin_material() {
         let peer = PeerInfo::new(PeerId::new("p1"), "Dev", "linux");
-        let json = String::from_utf8(Message::Handshake(Handshake::new(peer)).to_bytes().unwrap())
-            .unwrap();
+        let encoded = Message::Handshake(Handshake::new(peer)).to_bytes().unwrap();
         assert!(
-            !json.contains("pin"),
-            "the handshake must not carry PIN material: {}",
-            json
+            !encoded.windows(3).any(|w| w == b"pin"),
+            "the handshake must not carry PIN material"
         );
+    }
+
+    /// The F-20 measurement. JSON rendered `Vec<u8>` as a decimal array, so a
+    /// 64 KiB chunk cost ~235 KiB on the wire — 3.57x, against a "full Wi-Fi 6
+    /// bandwidth" goal.
+    #[test]
+    fn test_binary_codec_does_not_inflate_binary_payloads() {
+        let payload: Vec<u8> = (0..crate::DEFAULT_CHUNK_SIZE)
+            .map(|i| (i % 256) as u8)
+            .collect();
+        let raw_len = payload.len();
+
+        let msg = Message::FileChunk(FileChunk::new(
+            "tx-1",
+            "photo.raw",
+            raw_len as u64,
+            0,
+            1,
+            payload,
+        ));
+
+        let postcard_len = msg.to_bytes().unwrap().len();
+        let json_len = serde_json::to_vec(&msg).unwrap().len();
+
+        // What we replaced.
+        assert!(
+            json_len as f64 / raw_len as f64 > 3.0,
+            "JSON expansion was {:.2}x",
+            json_len as f64 / raw_len as f64
+        );
+
+        // What we ship: near-zero overhead over the raw bytes.
+        let expansion = postcard_len as f64 / raw_len as f64;
+        assert!(
+            expansion < 1.02,
+            "postcard expansion was {:.4}x ({} bytes for {} raw)",
+            expansion,
+            postcard_len,
+            raw_len
+        );
+    }
+
+    #[test]
+    fn test_binary_codec_round_trips_every_variant() {
+        let peer = PeerInfo::new(PeerId::new("p1"), "Dev", "linux");
+        let messages = vec![
+            Message::Handshake(Handshake::new(peer)),
+            Message::Clipboard {
+                seq: u64::MAX,
+                item: ClipboardItem::new(
+                    ContentType::Image,
+                    vec![0x00, 0xFF, 0x7F, 0x80],
+                    PeerId::new("p"),
+                ),
+            },
+            Message::FileChunk(FileChunk::new("tx", "f.bin", 3, 0, 1, vec![0, 255, 128])),
+            Message::Ack(TransferAck {
+                transfer_id: "tx".into(),
+                success: false,
+                error: Some("nope".into()),
+            }),
+            Message::PairingHello {
+                spake: vec![1, 2, 3],
+            },
+            Message::PairingConfirm { mac: "ab".into() },
+            Message::PairingResult {
+                accepted: true,
+                reason: None,
+            },
+            Message::Ping { timestamp: 0 },
+            Message::Pong {
+                timestamp: u64::MAX,
+            },
+        ];
+
+        for msg in messages {
+            let decoded = Message::from_bytes(&msg.to_bytes().unwrap()).unwrap();
+            assert_eq!(msg, decoded);
+        }
+    }
+
+    #[test]
+    fn test_truncated_frame_is_rejected_rather_than_misread() {
+        let msg = Message::Clipboard {
+            seq: 1,
+            item: ClipboardItem::from_text("hello", PeerId::new("p")),
+        };
+        let bytes = msg.to_bytes().unwrap();
+        assert!(Message::from_bytes(&bytes[..bytes.len() - 1]).is_err());
+        assert!(Message::from_bytes(&[]).is_err());
     }
 
     #[test]
