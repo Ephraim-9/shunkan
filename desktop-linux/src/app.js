@@ -101,6 +101,91 @@ function formatRelativeTime(timestamp) {
     return `${Math.floor(delta / 86400)}d ago`;
 }
 
+// ─── DOM construction ────────────────────────────────────────────────────────
+//
+// Rows are built with createElement/textContent/setAttribute rather than
+// interpolated into markup. Escaping text nodes but not attributes left
+// `data-hash="${item.hash}"`, `data-peer-id="${peer.id}"` and
+// `title="${peer.platform}"` open: peer names and platform strings arrive over
+// the network, so a peer advertising `linux" onmouseover="…` executed script in
+// the palette. Building nodes closes the whole class rather than one instance
+// of it — there is no parser to confuse.
+
+/**
+ * Create an element with optional class, text content, and attributes.
+ * @param {string} tag
+ * @param {{className?: string, text?: string, attrs?: Record<string, string>}} [options]
+ * @returns {HTMLElement}
+ */
+function el(tag, options = {}) {
+    const node = document.createElement(tag);
+    if (options.className) node.className = options.className;
+    // textContent never parses markup, whatever the string contains.
+    if (options.text !== undefined) node.textContent = String(options.text);
+    if (options.attrs) {
+        for (const [name, value] of Object.entries(options.attrs)) {
+            node.setAttribute(name, String(value));
+        }
+    }
+    return node;
+}
+
+/**
+ * Replace an element's children with the given nodes.
+ * @param {HTMLElement} container
+ * @param {Node[]} children
+ */
+function replaceChildren(container, children) {
+    container.replaceChildren(...children);
+}
+
+/**
+ * Build the empty-state block shown when a list has nothing in it.
+ * @param {string} icon
+ * @param {string} title
+ * @param {string} hint
+ * @returns {HTMLElement}
+ */
+function buildEmptyState(icon, title, hint) {
+    const wrapper = el('div', { className: 'empty-state' });
+    wrapper.append(
+        el('div', { className: 'empty-icon', text: icon }),
+        el('p', { text: title }),
+        el('p', { className: 'empty-hint', text: hint }),
+    );
+    return wrapper;
+}
+
+/**
+ * Build one clipboard history row.
+ * @param {object} item
+ * @param {number} index
+ * @returns {HTMLElement}
+ */
+function buildHistoryRow(item, index) {
+    const row = el('div', {
+        className: `history-item${index === state.selectedIndex ? ' selected' : ''}`,
+        attrs: { 'data-index': index, 'data-hash': item.hash ?? '' },
+    });
+
+    const content = el('div', { className: 'history-content' });
+    content.append(el('div', { className: 'history-preview', text: item.preview ?? '' }));
+
+    const meta = el('div', { className: 'history-meta' });
+    meta.append(
+        el('span', { text: formatRelativeTime(item.timestamp) }),
+        el('span', { text: '·' }),
+        el('span', { className: 'history-source', text: item.source ?? '' }),
+    );
+    content.append(meta);
+
+    row.append(
+        el('div', { className: 'history-icon', text: getContentTypeIcon(item.content_type) }),
+        content,
+    );
+    return row;
+}
+
 /**
  * Render the clipboard history list.
  */
@@ -109,31 +194,17 @@ function renderHistory() {
     const items = state.filteredHistory;
 
     if (items.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-icon">📋</div>
-                <p>${state.searchQuery ? 'No matching entries' : 'No clipboard history yet'}</p>
-                <p class="empty-hint">${state.searchQuery ? 'Try a different search' : 'Copy something to get started'}</p>
-            </div>
-        `;
+        replaceChildren(container, [
+            buildEmptyState(
+                '📋',
+                state.searchQuery ? 'No matching entries' : 'No clipboard history yet',
+                state.searchQuery ? 'Try a different search' : 'Copy something to get started',
+            ),
+        ]);
         return;
     }
 
-    container.innerHTML = items.map((item, index) => `
-        <div class="history-item ${index === state.selectedIndex ? 'selected' : ''}"
-             data-index="${index}"
-             data-hash="${item.hash}">
-            <div class="history-icon">${getContentTypeIcon(item.content_type)}</div>
-            <div class="history-content">
-                <div class="history-preview">${escapeHtml(item.preview)}</div>
-                <div class="history-meta">
-                    <span>${formatRelativeTime(item.timestamp)}</span>
-                    <span>·</span>
-                    <span class="history-source">${escapeHtml(item.source)}</span>
-                </div>
-            </div>
-        </div>
-    `).join('');
+    replaceChildren(container, items.map(buildHistoryRow));
 
     // Scroll selected item into view.
     const selected = container.querySelector('.selected');
@@ -143,22 +214,36 @@ function renderHistory() {
 }
 
 /**
+ * Build one peer chip.
+ * @param {object} peer
+ * @returns {HTMLElement}
+ */
+function buildPeerChip(peer) {
+    const chip = el('div', {
+        className: 'peer-chip',
+        attrs: { 'data-peer-id': peer.id ?? '', title: peer.platform ?? '' },
+    });
+    chip.append(
+        el('span', { className: 'peer-dot' }),
+        el('span', { className: 'peer-name', text: peer.device_name ?? '' }),
+    );
+    return chip;
+}
+
+/**
  * Render the peers panel.
  */
 function renderPeers() {
     const container = document.getElementById('peers-list');
 
     if (state.peers.length === 0) {
-        container.innerHTML = '<div class="empty-peers">No peers discovered</div>';
+        replaceChildren(container, [
+            el('div', { className: 'empty-peers', text: 'No peers discovered' }),
+        ]);
         return;
     }
 
-    container.innerHTML = state.peers.map(peer => `
-        <div class="peer-chip" data-peer-id="${peer.id}" title="${peer.platform}">
-            <span class="peer-dot"></span>
-            ${escapeHtml(peer.device_name)}
-        </div>
-    `).join('');
+    replaceChildren(container, state.peers.map(buildPeerChip));
 }
 
 /**
@@ -169,15 +254,6 @@ function renderStatus(status) {
     document.getElementById('session-type').textContent = status.session_type;
     document.getElementById('version').textContent = status.version;
     document.getElementById('port').textContent = status.listening_port;
-}
-
-/**
- * Escape HTML special characters to prevent XSS.
- */
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 // ─── Search / Filter ─────────────────────────────────────────────────────────

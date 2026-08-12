@@ -56,26 +56,32 @@ pub struct HistoryEntry {
     pub source: String,
 }
 
+/// Maximum number of characters shown in a history preview.
+///
+/// Counted in **characters**, not bytes. Slicing `&text[..200]` by byte offset
+/// panics the moment byte 200 lands mid-codepoint, which any paragraph of
+/// Japanese, Cyrillic, or emoji does immediately.
+const PREVIEW_CHARS: usize = 200;
+
+/// Truncate to at most [`PREVIEW_CHARS`] characters, appending an ellipsis if
+/// anything was cut.
+fn preview_of(text: &str) -> String {
+    match text.char_indices().nth(PREVIEW_CHARS) {
+        Some((byte_idx, _)) => format!("{}…", &text[..byte_idx]),
+        None => text.to_string(),
+    }
+}
+
 impl From<&ClipboardItem> for HistoryEntry {
     fn from(item: &ClipboardItem) -> Self {
         let (content_type_label, preview, full_text) = match &item.content_type {
             ContentType::PlainText => {
                 let text = String::from_utf8_lossy(&item.data).to_string();
-                let preview = if text.len() > 200 {
-                    format!("{}…", &text[..200])
-                } else {
-                    text.clone()
-                };
-                ("text".to_string(), preview, Some(text))
+                ("text".to_string(), preview_of(&text), Some(text))
             }
             ContentType::RichText => {
                 let text = String::from_utf8_lossy(&item.data).to_string();
-                let preview = if text.len() > 200 {
-                    format!("{}…", &text[..200])
-                } else {
-                    text.clone()
-                };
-                ("rich_text".to_string(), preview, Some(text))
+                ("rich_text".to_string(), preview_of(&text), Some(text))
             }
             ContentType::Image => (
                 "image".to_string(),
@@ -84,7 +90,7 @@ impl From<&ClipboardItem> for HistoryEntry {
             ),
             ContentType::FileUri => {
                 let uri = String::from_utf8_lossy(&item.data).to_string();
-                ("file".to_string(), uri.clone(), Some(uri))
+                ("file".to_string(), preview_of(&uri), Some(uri))
             }
         };
 
@@ -273,8 +279,55 @@ mod tests {
         let long_text = "a".repeat(500);
         let item = ClipboardItem::from_text(long_text.clone(), PeerId::new("peer-1"));
         let entry = HistoryEntry::from(&item);
-        assert!(entry.preview.len() < 210); // 200 + "…"
+        assert_eq!(entry.preview.chars().count(), PREVIEW_CHARS + 1); // + ellipsis
         assert_eq!(entry.full_text, Some(long_text));
+    }
+
+    /// The F-05 regression. `&text[..200]` panicked here: byte 200 of repeated
+    /// U+65E5 (3 bytes each) is not a character boundary.
+    #[test]
+    fn test_history_entry_multibyte_text_does_not_panic() {
+        for sample in ["日".repeat(300), "п".repeat(300), "🙂".repeat(300)] {
+            let item = ClipboardItem::from_text(sample.clone(), PeerId::new("peer-1"));
+            let entry = HistoryEntry::from(&item);
+
+            assert_eq!(entry.preview.chars().count(), PREVIEW_CHARS + 1);
+            assert!(entry.preview.ends_with('…'));
+            assert_eq!(entry.full_text, Some(sample));
+        }
+    }
+
+    #[test]
+    fn test_preview_truncates_on_character_count_not_bytes() {
+        // 250 three-byte characters: 750 bytes, but only 250 characters, so
+        // exactly 200 survive.
+        let text = "日".repeat(250);
+        let preview = preview_of(&text);
+        assert_eq!(preview.chars().count(), 201);
+        assert_eq!(preview, format!("{}…", "日".repeat(200)));
+    }
+
+    #[test]
+    fn test_preview_leaves_short_text_untouched() {
+        assert_eq!(preview_of("short"), "short");
+        assert_eq!(preview_of(""), "");
+        // Exactly at the limit: nothing to cut, so no ellipsis.
+        let exact = "x".repeat(PREVIEW_CHARS);
+        assert_eq!(preview_of(&exact), exact);
+    }
+
+    #[test]
+    fn test_file_uri_preview_is_also_truncated() {
+        let long_uri = format!("file:///{}", "é".repeat(400));
+        let item = ClipboardItem::new(
+            ContentType::FileUri,
+            long_uri.clone().into_bytes(),
+            PeerId::new("peer-1"),
+        );
+        let entry = HistoryEntry::from(&item);
+
+        assert_eq!(entry.preview.chars().count(), PREVIEW_CHARS + 1);
+        assert_eq!(entry.full_text, Some(long_uri));
     }
 
     // ── State-backed command tests ───────────────────────────────────────────

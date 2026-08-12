@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<!--
+  Palette DOM safety harness.
+
+  Loads the real src/app.js, feeds its renderers strings crafted to break out of
+  HTML attributes, and asserts that nothing escapes into markup. Run it through
+  tests/run-dom-tests.mjs, or just open it in a browser.
+
+  The hostile values are the exact shapes the audit called out in F-18: peer
+  names, platform strings, and content hashes arrive over the network, and they
+  used to be interpolated straight into `title="…"`, `data-peer-id="…"` and
+  `data-hash="…"`.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>pending</title>
+</head>
+<body>
+  <div id="history-list"></div>
+  <div id="peers-list"></div>
+  <span id="peer-count"></span>
+  <span id="session-type"></span>
+  <span id="version"></span>
+  <span id="port"></span>
+  <input id="search-input">
+  <pre id="result">pending</pre>
+
+  <script src="../src/app.js"></script>
+  <script>
+    // Values chosen to break out of an HTML attribute if the renderer builds
+    // markup from strings. If any of them lands as markup, `pwned` fires.
+    window.pwned = false;
+    const BREAKOUT_ATTR = 'linux" onmouseover="window.pwned=true';
+    const BREAKOUT_ID = 'peer-1" data-injected="yes';
+    const BREAKOUT_TAG = '<img src=x onerror="window.pwned=true">';
+    const BREAKOUT_HASH = 'abc123" onclick="window.pwned=true';
+    const BREAKOUT_SCRIPT = '<script>window.pwned=true<\/script>';
+
+    const failures = [];
+    function check(name, condition, detail) {
+      if (!condition) failures.push(detail ? `${name}: ${detail}` : name);
+    }
+
+    function runTests() {
+      // Neutralize the background refresh so it cannot re-render underneath us.
+      window.invoke = async (command) => (command === 'get_status' ? null : []);
+
+      state.peers = [
+        { id: BREAKOUT_ID, device_name: BREAKOUT_TAG, platform: BREAKOUT_ATTR, connected: true },
+      ];
+      state.history = [
+        {
+          hash: BREAKOUT_HASH,
+          content_type: 'text',
+          preview: BREAKOUT_SCRIPT,
+          full_text: BREAKOUT_SCRIPT,
+          timestamp: Math.floor(Date.now() / 1000),
+          source: BREAKOUT_TAG,
+        },
+      ];
+      state.filteredHistory = [...state.history];
+      state.selectedIndex = 0;
+
+      renderPeers();
+      renderHistory();
+
+      const peersList = document.getElementById('peers-list');
+      const historyList = document.getElementById('history-list');
+
+      // 1. No injected handler ever ran.
+      check('no script executed', window.pwned === false);
+
+      // 2. Nothing was parsed as an element.
+      check('no img injected', peersList.querySelector('img') === null);
+      check('no img injected in history', historyList.querySelector('img') === null);
+      check('no script injected', historyList.querySelector('script') === null);
+
+      // 3. Attributes hold the literal value, and no handler attribute appeared.
+      const chip = peersList.querySelector('.peer-chip');
+      check('peer chip rendered', chip !== null);
+      if (chip) {
+        check('title is literal', chip.getAttribute('title') === BREAKOUT_ATTR,
+          JSON.stringify(chip.getAttribute('title')));
+        check('no onmouseover attribute', !chip.hasAttribute('onmouseover'));
+        check('peer id is literal', chip.getAttribute('data-peer-id') === BREAKOUT_ID,
+          JSON.stringify(chip.getAttribute('data-peer-id')));
+        check('no injected attribute', !chip.hasAttribute('data-injected'));
+        check('device name is text', chip.textContent.includes(BREAKOUT_TAG));
+      }
+
+      const row = historyList.querySelector('.history-item');
+      check('history row rendered', row !== null);
+      if (row) {
+        check('hash is literal', row.getAttribute('data-hash') === BREAKOUT_HASH,
+          JSON.stringify(row.getAttribute('data-hash')));
+        check('no onclick attribute', !row.hasAttribute('onclick'));
+        const preview = row.querySelector('.history-preview');
+        check('preview is text', preview && preview.textContent === BREAKOUT_SCRIPT,
+          preview && JSON.stringify(preview.textContent));
+        const source = row.querySelector('.history-source');
+        check('source is text', source && source.textContent === BREAKOUT_TAG,
+          source && JSON.stringify(source.textContent));
+      }
+
+      // 4. Empty states still render, and still render as text.
+      state.peers = [];
+      state.history = [];
+      state.filteredHistory = [];
+      state.searchQuery = BREAKOUT_TAG;
+      renderPeers();
+      renderHistory();
+      check('empty peers rendered', peersList.textContent.includes('No peers discovered'));
+      check('empty history rendered', historyList.textContent.includes('No matching entries'));
+      check('no img in empty state', historyList.querySelector('img') === null);
+      check('still not pwned', window.pwned === false);
+
+      const verdict = failures.length === 0
+        ? 'RESULT:PASS'
+        : `RESULT:FAIL ${failures.join(' | ')}`;
+      document.getElementById('result').textContent = verdict;
+      document.title = verdict;
+    }
+
+    window.addEventListener('load', () => {
+      try {
+        runTests();
+      } catch (err) {
+        const verdict = `RESULT:FAIL threw ${err && err.message}`;
+        document.getElementById('result').textContent = verdict;
+        document.title = verdict;
+      }
+    });
+  </script>
+</body>
+</html>
