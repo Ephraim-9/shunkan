@@ -1,0 +1,1035 @@
+<title>Shunkan Codebase Audit</title>
+<style>
+  :root {
+    --ground: #F2F4F7;
+    --surface: #FFFFFF;
+    --surface-sunk: #E9ECF1;
+    --ink: #14171D;
+    --ink-muted: #59616F;
+    --ink-faint: #858D9B;
+    --rule: #D6DBE3;
+    --rule-strong: #B9C0CB;
+    --accent: #3B41A8;
+    --accent-soft: #E5E6F5;
+    --crit: #B8402E;
+    --crit-soft: #F8E4E0;
+    --major: #8A5A12;
+    --major-soft: #F8EEDB;
+    --minor: #46607A;
+    --minor-soft: #E5EBF1;
+    --good: #2F6B4F;
+    --good-soft: #E0EFE7;
+
+    --serif: Charter, "Bitstream Charter", "Iowan Old Style", "Source Serif 4", "Palatino Linotype", Georgia, serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    --measure: 68ch;
+    --gutter: 7.5rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0F1217;
+      --surface: #161A21;
+      --surface-sunk: #1D222B;
+      --ink: #E3E7ED;
+      --ink-muted: #98A1B0;
+      --ink-faint: #6E7787;
+      --rule: #2A303A;
+      --rule-strong: #3B434F;
+      --accent: #939AF2;
+      --accent-soft: #21243B;
+      --crit: #E8785F;
+      --crit-soft: #35201C;
+      --major: #D4A249;
+      --major-soft: #322818;
+      --minor: #8FADC8;
+      --minor-soft: #1C242D;
+      --good: #62BE97;
+      --good-soft: #172A22;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0F1217;
+    --surface: #161A21;
+    --surface-sunk: #1D222B;
+    --ink: #E3E7ED;
+    --ink-muted: #98A1B0;
+    --ink-faint: #6E7787;
+    --rule: #2A303A;
+    --rule-strong: #3B434F;
+    --accent: #939AF2;
+    --accent-soft: #21243B;
+    --crit: #E8785F;
+    --crit-soft: #35201C;
+    --major: #D4A249;
+    --major-soft: #322818;
+    --minor: #8FADC8;
+    --minor-soft: #1C242D;
+    --good: #62BE97;
+    --good-soft: #172A22;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 0 1.75rem 6rem;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    padding: 4.5rem 0 2rem;
+    border-bottom: 2px solid var(--ink);
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(2.4rem, 6vw, 3.6rem);
+    line-height: 1.04;
+    letter-spacing: -0.022em;
+    font-weight: 600;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  h1 .kanji {
+    color: var(--accent);
+    font-weight: 400;
+  }
+
+  .standfirst {
+    font-size: 1.2rem;
+    line-height: 1.5;
+    color: var(--ink-muted);
+    max-width: var(--measure);
+    margin: 0;
+    text-wrap: pretty;
+  }
+
+  .runline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.5rem;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    color: var(--ink-faint);
+    letter-spacing: 0.01em;
+  }
+
+  .runline b { color: var(--ink-muted); font-weight: 500; }
+
+  /* ---------- tally ---------- */
+
+  .tally {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 2.5rem 0 0;
+  }
+
+  .tally-cell {
+    background: var(--surface);
+    padding: 1.1rem 1.25rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .tally-num {
+    font-family: var(--mono);
+    font-size: 2rem;
+    font-weight: 500;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tally-label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .t-crit .tally-num { color: var(--crit); }
+  .t-major .tally-num { color: var(--major); }
+  .t-minor .tally-num { color: var(--minor); }
+  .t-good .tally-num { color: var(--good); }
+
+  /* ---------- prose ---------- */
+
+  section { padding-top: 3.5rem; }
+
+  h2 {
+    font-size: 1.7rem;
+    letter-spacing: -0.015em;
+    font-weight: 600;
+    margin: 0 0 0.4rem;
+    text-wrap: balance;
+  }
+
+  .sec-head {
+    border-bottom: 1px solid var(--rule-strong);
+    padding-bottom: 0.9rem;
+    margin-bottom: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .sec-head p {
+    margin: 0;
+    color: var(--ink-muted);
+    max-width: var(--measure);
+    font-size: 1rem;
+  }
+
+  p { max-width: var(--measure); }
+
+  a { color: var(--accent); }
+
+  code, .path {
+    font-family: var(--mono);
+    font-size: 0.84em;
+    background: var(--surface-sunk);
+    padding: 0.1em 0.36em;
+    border-radius: 2px;
+    word-break: break-word;
+  }
+
+  /* ---------- verdict callout ---------- */
+
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--crit);
+    padding: 1.6rem 1.75rem;
+    margin-top: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+
+  .verdict h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .verdict p { margin: 0; color: var(--ink-muted); }
+  .verdict p strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------- findings ledger ---------- */
+
+  .ledger { display: flex; flex-direction: column; }
+
+  .finding {
+    display: grid;
+    grid-template-columns: var(--gutter) 1fr;
+    gap: 0 2rem;
+    padding: 1.6rem 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .finding:first-child { border-top: 1px solid var(--rule-strong); }
+
+  .f-gutter {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+
+  .f-id {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    padding: 0.22rem 0.5rem;
+    border-radius: 2px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .c-crit  { background: var(--crit-soft);  color: var(--crit); }
+  .c-major { background: var(--major-soft); color: var(--major); }
+  .c-minor { background: var(--minor-soft); color: var(--minor); }
+
+  .f-body { display: flex; flex-direction: column; gap: 0.55rem; min-width: 0; }
+
+  .f-title {
+    font-size: 1.12rem;
+    font-weight: 600;
+    line-height: 1.35;
+    margin: 0;
+    letter-spacing: -0.008em;
+    text-wrap: balance;
+  }
+
+  .f-loc {
+    font-family: var(--mono);
+    font-size: 0.73rem;
+    color: var(--ink-faint);
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
+  .f-body p { margin: 0; font-size: 0.97rem; }
+
+  .f-fix {
+    margin: 0.25rem 0 0;
+    padding-left: 0.9rem;
+    border-left: 2px solid var(--accent);
+    font-size: 0.95rem;
+    color: var(--ink-muted);
+  }
+
+  .f-fix b {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.1rem;
+    font-weight: 600;
+  }
+
+  .proof {
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    background: var(--surface-sunk);
+    border: 1px solid var(--rule);
+    padding: 0.7rem 0.85rem;
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.55;
+    color: var(--ink-muted);
+    margin: 0.2rem 0 0;
+  }
+
+  .proof .tag {
+    color: var(--good);
+    font-weight: 600;
+  }
+
+  /* ---------- phases ---------- */
+
+  .phases { display: flex; flex-direction: column; gap: 0; }
+
+  .phase {
+    display: grid;
+    grid-template-columns: var(--gutter) 1fr;
+    gap: 0 2rem;
+    padding: 1.5rem 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .phase:first-child { border-top: 1px solid var(--rule-strong); }
+
+  .phase-num {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .phase-body { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+
+  .phase-body h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: -0.008em;
+  }
+
+  .phase-body p { margin: 0; font-size: 0.97rem; color: var(--ink-muted); }
+
+  .refs {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--ink-faint);
+    letter-spacing: 0.02em;
+  }
+
+  .exit {
+    font-size: 0.92rem;
+    color: var(--ink);
+    background: var(--accent-soft);
+    padding: 0.5rem 0.75rem;
+    border-radius: 2px;
+  }
+
+  .exit b {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  /* ---------- solid list ---------- */
+
+  .solid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--good);
+  }
+
+  .solid-cell {
+    background: var(--surface);
+    padding: 1.1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .solid-cell h4 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .solid-cell p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--ink-muted);
+  }
+
+  footer {
+    margin-top: 4.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--ink-faint);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 42rem) {
+    :root { --gutter: 1fr; }
+    .finding, .phase {
+      grid-template-columns: 1fr;
+      gap: 0.7rem;
+    }
+    .f-gutter { flex-direction: row; align-items: center; gap: 0.6rem; }
+    body { font-size: 16px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Codebase Review · claude/codebase-logic-review-euqfnl</p>
+    <h1>Project <span class="kanji">瞬間</span> — What's Broken and How to Fix It</h1>
+    <p class="standfirst">A full logic and architecture audit of <code>shunkan</code>: 3,232 lines of Rust, JavaScript, and Gradle across a P2P clipboard engine, a Linux daemon, and an Android skeleton. Findings are ordered by what blocks the product, not by file.</p>
+    <div class="runline">
+      <span><b>HEAD</b> df2721c</span>
+      <span><b>Tests</b> 74 passing</span>
+      <span><b>Build</b> compiles, 20 warnings</span>
+      <span><b>CI</b> would fail</span>
+      <span><b>Findings</b> 35</span>
+    </div>
+  </header>
+
+  <div class="tally">
+    <div class="tally-cell t-crit"><span class="tally-num">8</span><span class="tally-label">Critical</span></div>
+    <div class="tally-cell t-major"><span class="tally-num">13</span><span class="tally-label">Major</span></div>
+    <div class="tally-cell t-minor"><span class="tally-num">14</span><span class="tally-label">Minor</span></div>
+    <div class="tally-cell t-good"><span class="tally-num">0</span><span class="tally-label">Working paths</span></div>
+  </div>
+
+  <div class="verdict">
+    <h3>The headline: no two devices can ever connect, and nothing is wired up anyway</h3>
+    <p>Every module in <code>shunkan-core</code> is individually plausible and individually tested. But <strong>the QUIC transport's public API cannot establish a single connection</strong> — each side generates its own throwaway certificate and trusts only itself, so every handshake dies with <code>BadSignature</code>. I reproduced this directly.</p>
+    <p>It stays green in CI because the one test that exercises client-to-server (<code>transport.rs:290</code>) throws away the public API and hand-builds a shared config — it tests a code path that ships to nobody.</p>
+    <p>Even with that fixed, nothing would happen: <strong>the desktop daemon never calls the core library.</strong> Its mDNS and QUIC functions are <code>loop { sleep }</code> stubs that log heartbeats. Every Tauri command returns an empty vector. The frontend talks to a Tauri runtime that isn't a dependency of the project.</p>
+    <p>The gap to close is not code volume — it's that the pieces have never been connected to each other. Treat every "complete" and "implement" in the commit log as "scaffolded".</p>
+  </div>
+
+  <section>
+    <div class="sec-head">
+      <h2>Blocking defects</h2>
+      <p>Each of these alone prevents the product from functioning at all. Nothing downstream is testable until they're closed.</p>
+    </div>
+
+    <div class="ledger">
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-01</span><span class="chip c-crit">Critical</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Every peer trusts only its own certificate, so the QUIC handshake can never succeed</h3>
+          <p class="f-loc">core/src/crypto.rs:61–110 · core/src/transport.rs:49, 104</p>
+          <p><code>generate_self_signed_cert()</code> mints a fresh keypair on every call and builds a client config whose root store contains <em>that same cert</em>. <code>TransportServer::start()</code> and <code>TransportClient::new()</code> each call it independently, so the client trusts a certificate the server has never seen.</p>
+          <pre class="proof"><span class="tag">reproduced</span> TransportClient::new() → connect(TransportServer addr)
+Err("Failed to establish QUIC connection: the cryptographic
+     handshake failed: error 51: invalid peer certificate:
+     BadSignature")</pre>
+          <p class="f-fix"><b>Fix</b>Generate one long-lived device identity keypair, persist it (<code>~/.local/share/shunkan/</code>), and derive the cert from it. Peer trust comes from a paired-device store of cert fingerprints, verified by a custom <code>rustls::client::danger::ServerCertVerifier</code> that accepts a peer only if its fingerprint was pinned at pairing time. Delete the shared-config workaround in the test and make the test drive the real public API.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-02</span><span class="chip c-crit">Critical</span></div>
+        <div class="f-body">
+          <h3 class="f-title">The desktop daemon never calls shunkan-core; discovery and transport are sleep loops</h3>
+          <p class="f-loc">desktop-linux/src-tauri/src/main.rs:98–150 · commands.rs:110–160</p>
+          <p><code>run_mdns_discovery</code> and <code>run_quic_listener</code> log "would advertise…" / "would listen…" and then <code>sleep</code> forever. Neither imports <code>discovery</code> or <code>transport</code>. All five IPC commands return <code>vec![]</code> / <code>false</code>. The clipboard callback logs a hash and drops the item on the floor.</p>
+          <p class="f-fix"><b>Fix</b>Build a single <code>AppState</code> holding <code>DiscoveryService</code>, a peer-connection map, and <code>ClipboardHistory</code> behind an <code>Arc</code>. Wire the three tasks to it, make the clipboard callback push into history and fan out to connected peers, and back each command with real state.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-03</span><span class="chip c-crit">Critical</span></div>
+        <div class="f-body">
+          <h3 class="f-title">The mDNS service advertises zero IP addresses, so peers can resolve it but never reach it</h3>
+          <p class="f-loc">core/src/discovery.rs:83–90</p>
+          <p>The address argument is <code>""</code> with the comment "Let the daemon pick the IP". It does not: <code>mdns-sd</code>'s <code>AsIpAddrs for &amp;str</code> returns an <em>empty set</em> for an empty string, and <code>ServiceInfo::new</code> defaults <code>addr_auto: false</code>. The service record is published with no A/AAAA records.</p>
+          <p class="f-fix"><b>Fix</b>Chain <code>.enable_addr_auto()</code> onto the <code>ServiceInfo</code>, which is exactly the API for "let the daemon track host addresses". Add an integration test asserting a resolved peer has a non-empty <code>addresses</code> vector.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-04</span><span class="chip c-crit">Critical</span></div>
+        <div class="f-body">
+          <h3 class="f-title">TXT properties are built and then silently thrown away</h3>
+          <p class="f-loc">core/src/discovery.rs:77–90</p>
+          <p><code>register()</code> loops over its <code>properties</code> argument building a <code>txt_properties</code> vector, then passes <code>None</code> to <code>ServiceInfo::new</code> and never uses it. Peer ID, platform, and protocol version are never advertised — so discovered peers can't be identified, version-checked, or matched to a pairing record.</p>
+          <p class="f-fix"><b>Fix</b>Pass the properties through as a <code>HashMap&lt;String, String&gt;</code>. Define the TXT schema explicitly (<code>id</code>, <code>platform</code>, <code>ver</code>, <code>fp</code> for cert fingerprint) since F-01's trust model will need the fingerprint here.</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Correctness bugs</h2>
+      <p>Logic that is wired up but behaves incorrectly — panics, data loss, and silent state corruption.</p>
+    </div>
+
+    <div class="ledger">
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-05</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Clipboard preview panics on any non-ASCII text longer than 200 bytes</h3>
+          <p class="f-loc">desktop-linux/src-tauri/src/commands.rs:62, 72</p>
+          <p><code>&amp;text[..200]</code> slices by byte offset. Copy a paragraph of Japanese, Cyrillic, or an emoji-laden message and byte 200 lands mid-codepoint, panicking the command handler. The existing test only uses <code>"a".repeat(500)</code>, so it never catches this.</p>
+          <pre class="proof"><span class="tag">reproduced</span> "日".repeat(300)[..200] → panic:
+byte index 200 is not a char boundary</pre>
+          <p class="f-fix"><b>Fix</b>Truncate on character boundaries: <code>text.char_indices().nth(200).map_or(text.len(), |(i, _)| i)</code>. Apply to both the <code>PlainText</code> and <code>RichText</code> arms, and add a multibyte case to the test.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-06</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Clipboard writes vanish immediately on X11</h3>
+          <p class="f-loc">desktop-linux/src-tauri/src/clipboard.rs:194–218, 145–147</p>
+          <p><code>write_to_clipboard</code> constructs a local <code>Clipboard</code>, sets the text, and returns — dropping it. On X11 the clipboard is a live ownership protocol, not a store: when the owning connection goes away, the content goes with it. Pasted text will be empty or stale. The same constructor also runs on <em>every 500 ms poll</em>, opening a new X11/Wayland connection twenty times a minute.</p>
+          <p class="f-fix"><b>Fix</b>Hold one <code>Clipboard</code> for the process lifetime inside the monitor. On X11 use arboard's <code>SetExtLinux::wait()</code> on a dedicated owner thread so the selection survives. This is the concrete form of the tiered strategy ADR-004 already describes but no code implements.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-07</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">The feedback-loop guard never resets, permanently blocking one clipboard value</h3>
+          <p class="f-loc">desktop-linux/src-tauri/src/clipboard.rs:103, 200–204, 167–174</p>
+          <p><code>last_written_hash</code> is set when we write remote content and is never cleared. Any future <em>deliberate</em> copy of that same text by the user is silently discarded forever. Receive a password from your phone once and you can never re-share it from that desktop again.</p>
+          <p class="f-fix"><b>Fix</b>Make the guard one-shot — clear it the first time it suppresses a poll — or scope it to a short window (hash plus an <code>Instant</code>, expiring after ~2 s). One-shot is the more predictable of the two.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-08</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Every message opens its own QUIC stream, so ordering is not guaranteed</h3>
+          <p class="f-loc">core/src/transport.rs:147–189</p>
+          <p><code>send_message</code> calls <code>open_uni()</code> per message and <code>recv_message</code> calls <code>accept_uni()</code> per message. QUIC streams are independent and explicitly unordered relative to each other — that's the head-of-line-blocking property the architecture doc <em>praises</em>. Applied per message, it means a stale clipboard item can land after and overwrite a newer one, and file chunks arrive shuffled. There is no reassembly or reordering code anywhere.</p>
+          <p class="f-fix"><b>Fix</b>Use streams as logical channels, not as envelopes: one long-lived ordered stream for clipboard and control traffic, one stream per file transfer. Add a monotonic sequence number to clipboard messages and drop out-of-order arrivals. Write the reassembly path — <code>chunk_index</code> and <code>total_chunks</code> exist in the protocol but nothing consumes them.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-09</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Re-copying existing content keeps the original timestamp</h3>
+          <p class="f-loc">core/src/history.rs:44–54</p>
+          <p>The dedup branch moves the entry to the front but returns before touching <code>timestamp</code> or <code>source_peer</code>. The UI orders by position but <em>displays</em> the stale time, so something copied one second ago reads "3h ago".</p>
+          <p class="f-fix"><b>Fix</b>Update the stored entry's timestamp and source from the incoming item before re-inserting it at the front.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-10</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">keep_alive_ms is dead configuration; idle connections will silently drop</h3>
+          <p class="f-loc">core/src/transport.rs:26, 33</p>
+          <p>The field is set, defaulted, and asserted in three tests, but never applied to a <code>quinn::TransportConfig</code>. With no keep-alive, a paired connection dies at quinn's default idle timeout, and nothing reconnects.</p>
+          <p class="f-fix"><b>Fix</b>Build a <code>quinn::TransportConfig</code>, call <code>keep_alive_interval()</code> and <code>max_idle_timeout()</code>, and attach it to both endpoint configs. Add reconnect-on-idle-close handling.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-11</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Clipboard read errors are swallowed into a success value</h3>
+          <p class="f-loc">desktop-linux/src-tauri/src/clipboard.rs:149–159</p>
+          <p>Every <code>get_text</code> error returns <code>Ok(None)</code>, which is indistinguishable from "clipboard unchanged". A permanently broken display connection looks identical to an idle clipboard, and the <code>Err</code> arm of the monitor loop is effectively unreachable.</p>
+          <p class="f-fix"><b>Fix</b>Keep <code>ContentNotAvailable</code> as <code>Ok(None)</code>; propagate real errors. Have the loop count consecutive failures and back off or re-initialize rather than spinning silently.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-12</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Blocking display-server I/O runs directly on the async runtime</h3>
+          <p class="f-loc">desktop-linux/src-tauri/src/clipboard.rs:230–254</p>
+          <p><code>run_monitor_loop</code> is <code>async</code>, but <code>poll_for_changes</code> performs synchronous X11/Wayland round-trips inside it. A slow or hung compositor stalls the whole tokio worker, including QUIC.</p>
+          <p class="f-fix"><b>Fix</b>Wrap the poll in <code>tokio::task::spawn_blocking</code>, or move clipboard ownership to a dedicated OS thread that communicates over an <code>mpsc</code> channel — which the event-driven rewrite in F-24 needs anyway.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-13</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Self-filtering in discovery is substring-based and order-dependent</h3>
+          <p class="f-loc">core/src/discovery.rs:119, 127–132</p>
+          <p>Two problems. The filter is <code>instance.contains(our)</code>, so a peer named <code>thinkpad</code> would suppress <code>helliot-thinkpad</code>. And <code>our_instance</code> is captured when <code>browse()</code> is called — call <code>browse()</code> before <code>register()</code> and the filter is <code>None</code> forever, so the device discovers itself.</p>
+          <p class="f-fix"><b>Fix</b>Compare full service names for equality, and share the instance name via <code>Arc&lt;Mutex&lt;Option&lt;String&gt;&gt;&gt;</code> so registration order doesn't matter. Better still, filter on the peer ID from the TXT record once F-04 lands.</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Security</h2>
+      <p>The product's stated promise is that OTP codes and passwords never leave the LAN. The current pairing and authorization story does not deliver that.</p>
+    </div>
+
+    <div class="ledger">
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-14</span><span class="chip c-crit">Critical</span></div>
+        <div class="f-body">
+          <h3 class="f-title">PIN pairing is decorative — and nothing ever checks it</h3>
+          <p class="f-loc">core/src/crypto.rs:35–47 · core/src/protocol.rs:65</p>
+          <p>The wire value is an unsalted <code>BLAKE3("shunkan-pin-v1:" || pin)</code> over a six-digit space. All 10<sup>6</sup> candidates can be enumerated in milliseconds, so anyone who sniffs one handshake recovers the PIN — and the value is static, so it replays. More fundamentally: <strong>no code anywhere reads <code>Handshake.pin_hash</code></strong>. There is no verification path, failed-attempt limit, or pairing state machine. REQ-CORE-02 is unimplemented.</p>
+          <p class="f-fix"><b>Fix</b>Use a real PAKE — <code>spake2</code> over the six-digit secret — so the exchange yields a shared key without exposing the PIN, and bind the resulting key to the TLS certificate fingerprints of both sides. If a PAKE is out of scope for now, the minimum viable version is a salted, session-nonce-bound commitment plus rate limiting. Compare with <code>subtle::ConstantTimeEq</code>, not <code>==</code> (crypto.rs:45).</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-15</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">The X25519 keypair is 32 random bytes labelled "public key"</h3>
+          <p class="f-loc">core/src/crypto.rs:112–135</p>
+          <p><code>KeyPair::generate_placeholder</code> fills a vector from the RNG. There is no private key, no curve operation, and no Diffie-Hellman. It is doc-commented as a scaffold, but it is a <code>pub</code> type named <code>KeyPair</code> with a <code>public_key</code> field, which is exactly the shape a caller would trust. <code>x25519-dalek</code> isn't even a dependency.</p>
+          <p class="f-fix"><b>Fix</b>Either implement it properly with <code>x25519-dalek</code> (<code>EphemeralSecret</code> / <code>PublicKey</code>, returning a real shared secret), or delete the type entirely until it's needed. A convincing-looking fake in a crypto module is worse than an absence.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-16</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Any device on the LAN can connect; there is no authorization layer</h3>
+          <p class="f-loc">core/src/transport.rs:67–80 · core/src/crypto.rs:78</p>
+          <p><code>accept()</code> returns every incoming connection with no handshake validation, no pairing check, and no allowlist; the server is built <code>with_no_client_auth()</code>. Once F-01 is fixed in the obvious way, this becomes a clipboard that any machine on a café Wi-Fi can read from and inject into.</p>
+          <p class="f-fix"><b>Fix</b>Require the first frame on a new connection to be a <code>Handshake</code> that resolves to a known paired peer, with a short timeout, and close the connection otherwise. Enable mutual TLS against the paired-device cert store so unauthorized peers are rejected during the handshake rather than after it.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-17</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Unauthenticated peers control a 16 MiB allocation per stream</h3>
+          <p class="f-loc">core/src/transport.rs:177–185, 236–243</p>
+          <p>The length prefix is read from the wire and used directly as <code>vec![0u8; len]</code>. The 16 MiB ceiling is per stream and streams are unbounded, so a peer that opens streams in a loop drives memory to exhaustion — against a daemon whose stated hard ceiling is 20 MB total (INV-01).</p>
+          <p class="f-fix"><b>Fix</b>Authenticate before allocating (F-16), set per-message-type limits far below 16 MiB, cap concurrent streams via <code>quinn::TransportConfig::max_concurrent_uni_streams</code>, and read into a bounded reusable buffer instead of allocating from an attacker-supplied number.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-18</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">HTML attribute injection in the palette UI</h3>
+          <p class="f-loc">desktop-linux/src/app.js:122–136, 156–161</p>
+          <p><code>escapeHtml</code> is applied to text nodes but not to interpolated attributes: <code>data-hash="${item.hash}"</code>, <code>data-peer-id="${peer.id}"</code>, and <code>title="${peer.platform}"</code>. Peer names and platform strings arrive over the network from an unauthenticated source (F-16), so a peer advertising <code>linux" onmouseover="…</code> executes script in the palette.</p>
+          <p class="f-fix"><b>Fix</b>Stop building markup from strings. Construct rows with <code>document.createElement</code>, <code>textContent</code>, and <code>setAttribute</code> — that closes the whole class rather than one instance of it.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-19</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Device identity is regenerated every launch, so "silent reconnect" is impossible</h3>
+          <p class="f-loc">desktop-linux/src-tauri/src/main.rs:37 · core/src/crypto.rs:61</p>
+          <p><code>PeerId::random()</code> runs at startup and certificates are minted per call. Restart the daemon and every paired device sees a stranger. REQ-CORE-02's "stores mutual TLS certificates for silent future reconnects" has no storage layer at all.</p>
+          <p class="f-fix"><b>Fix</b>Persist identity — peer ID, keypair, certificate, and the paired-peer store — under the XDG data directory with <code>0600</code> permissions, loaded once at startup.</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Performance &amp; invariant violations</h2>
+      <p>Measured against the project's own stated targets: sub-50 ms text propagation, gigabit file transfer, and a 20 MB hard memory ceiling.</p>
+    </div>
+
+    <div class="ledger">
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-20</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">JSON encoding inflates binary payloads 3.57×</h3>
+          <p class="f-loc">core/src/protocol.rs:216–237</p>
+          <p><code>serde_json</code> renders <code>Vec&lt;u8&gt;</code> as a decimal array — <code>[255,0,17,…]</code> — so file chunks and images cost roughly 3.6 bytes of wire per byte of data, plus parse cost on both ends. That directly contradicts the "full Wi-Fi 6 bandwidth" goal and multiplies the memory footprint of every in-flight message.</p>
+          <pre class="proof"><span class="tag">measured</span> 64 KiB FileChunk → framed message
+raw       65,536 B
+json     234,182 B     expansion 3.57×</pre>
+          <p class="f-fix"><b>Fix</b>Switch the envelope to a binary codec — <code>postcard</code> or <code>bincode</code>, both already implied by the stack doc. Better still, keep JSON for small control messages and send file payloads as raw length-delimited bytes on their own stream, so chunk data never passes through a serializer.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-21</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Clipboard history is bounded by entry count but not by bytes</h3>
+          <p class="f-loc">core/src/history.rs:14–21, 43–71</p>
+          <p>The cap is 100 <em>entries</em> of unbounded size, all resident, each holding a full <code>Vec&lt;u8&gt;</code>. A hundred copied screenshots is hundreds of megabytes against INV-01's 20 MB hard ceiling. The module doc cites INV-01 as the reason it avoids SQLite, which is the wrong lever — the payloads are the cost, not the index.</p>
+          <p class="f-fix"><b>Fix</b>Track total bytes and evict on whichever limit hits first. Set a per-entry maximum for inline storage and spill anything larger to a content-addressed file on disk, keeping only the hash and a path in memory.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-22</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">chunk_and_hash duplicates the entire file in memory</h3>
+          <p class="f-loc">core/src/hashing.rs:70–82</p>
+          <p><code>chunk.to_vec()</code> copies every chunk into a new allocation, so the returned vector is a second full copy of the input — which was already fully in memory to be passed as a slice. A 2 GB transfer, the exact scenario in the PRD's designer persona, needs 4 GB.</p>
+          <p class="f-fix"><b>Fix</b>Return borrowed slices (<code>impl Iterator&lt;Item = (&amp;[u8], String)&gt;</code>), and add a streaming path that reads from a file handle chunk by chunk so a transfer's peak memory is one chunk, not one file.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-23</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">The "O(1) dedup" index is rebuilt from scratch on every insert</h3>
+          <p class="f-loc">core/src/history.rs:66, 140–145</p>
+          <p><code>rebuild_index()</code> clears the map and re-inserts every entry — cloning each hash string — on every push, every dedup hit, and every removal. The documented O(1) lookup sits behind an O(n) write with n string allocations.</p>
+          <p class="f-fix"><b>Fix</b>Index by a stable key rather than a positional one. Store entries in a slab or <code>IndexMap</code> and keep the deque holding keys, so ordering changes don't invalidate the index. At 100 entries this is not urgent — but the doc comment should not claim a property the code doesn't have.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-24</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">The latency budget is spent before a packet is sent</h3>
+          <p class="f-loc">desktop-linux/src-tauri/src/clipboard.rs:124 · desktop-linux/src/app.js:310–313</p>
+          <p>A 500 ms clipboard poll plus a 2 s UI refresh means worst-case 2.5 s from copy to visible, against a stated sub-50 ms target. Polling is also the pattern INV-03 prohibits on Android, and this is the implementation that would be ported there.</p>
+          <p class="f-fix"><b>Fix</b>Go event-driven, which the ADR already specifies: <code>wl-clipboard-rs</code> with <code>ext-data-control-v1</code> on wlroots, XFixes selection notifications on X11. Push updates to the UI over Tauri events instead of having the frontend poll.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-25</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">compute_merkle_root is not a Merkle root</h3>
+          <p class="f-loc">core/src/hashing.rs:89–99</p>
+          <p>It concatenates hex hashes into one hasher. That's a fine whole-file checksum, but it isn't a tree: you can't verify a chunk against a root without every other hash, and there are no partial-verification or repair paths. The name promises a structure the code doesn't build.</p>
+          <p class="f-fix"><b>Fix</b>Rename it <code>compute_file_checksum</code>, or build an actual binary tree if partial verification is wanted. Either way, add a domain separator and hash the raw 32-byte digests rather than their hex encoding.</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Frontend &amp; the missing Tauri layer</h2>
+      <p>The desktop UI is a static page talking to a runtime the project does not depend on.</p>
+    </div>
+
+    <div class="ledger">
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-26</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">There is no Tauri app — and the IPC bridge targets the wrong API version</h3>
+          <p class="f-loc">desktop-linux/src/app.js:31–37 · src-tauri/Cargo.toml</p>
+          <p>Three compounding problems. The crate is named <code>src-tauri</code> but has no <code>tauri</code> dependency, no <code>tauri.conf.json</code>, and no <code>build.rs</code>; <code>main.rs</code> is a plain tokio binary. None of the functions in <code>commands.rs</code> carry <code>#[tauri::command]</code> or are registered in a handler. And the bridge calls <code>window.__TAURI__.invoke</code>, which is the v1 shape — v2 exposes <code>window.__TAURI__.core.invoke</code> and only when <code>withGlobalTauri</code> is enabled. Argument names are snake_case where v2 expects camelCase. So <code>window.__TAURI__</code> is always undefined and the UI silently runs on <code>mockInvoke</code> forever, which is why it looks like it works.</p>
+          <p class="f-fix"><b>Fix</b>Add the Tauri v2 dependency, config, and build script; annotate and register the commands; import <code>invoke</code> from <code>@tauri-apps/api/core</code> rather than reaching for a global. Keep the mock behind an explicit dev flag so a missing backend fails loudly instead of quietly rendering fake data.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-27</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">The 2-second refresh erases whatever the user is searching for</h3>
+          <p class="f-loc">desktop-linux/src/app.js:287–305, 310–313</p>
+          <p><code>loadData</code> assigns <code>filteredHistory = [...history]</code> without re-applying <code>state.searchQuery</code>, and <code>setInterval</code> runs it every two seconds. Type a query, wait two seconds, and the full list returns underneath you with the selection reset — while the search box still shows your text.</p>
+          <p class="f-fix"><b>Fix</b>Have <code>loadData</code> call <code>filterHistory()</code> instead of overwriting the filtered list, and preserve the selected entry by hash rather than by index. Replacing polling with push events (F-24) removes the race altogether.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-28</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Enter in the search box triggers a paste</h3>
+          <p class="f-loc">desktop-linux/src/app.js:326, 210–237</p>
+          <p>The keydown handler is bound to <code>document</code> and doesn't check the event target, so ordinary typing in the search field competes with palette navigation. Pressing Enter to commit a search instead pastes the highlighted entry into the system clipboard.</p>
+          <p class="f-fix"><b>Fix</b>Scope arrow and Enter handling to palette context, and let the search input keep its own key events. Debounce the input handler while you're there — it currently re-renders the whole list per keystroke.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-29</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Escape doesn't close, and a single click pastes without confirmation</h3>
+          <p class="f-loc">desktop-linux/src/app.js:231–235, 260–268</p>
+          <p>Escape logs "would close overlay" to the console. Clicking anywhere on a history row immediately overwrites the system clipboard — no double-click, no confirm — so brushing a row while scanning silently replaces what you had copied.</p>
+          <p class="f-fix"><b>Fix</b>Wire Escape to <code>getCurrentWindow().hide()</code> once Tauri is real (F-26). Make single click select and Enter or double-click paste, matching the keyboard model the footer already advertises.</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Build, CI, and the Android module</h2>
+      <p>The pipeline that is supposed to catch the above cannot currently run to completion.</p>
+    </div>
+
+    <div class="ledger">
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-30</span><span class="chip c-crit">Critical</span></div>
+        <div class="f-body">
+          <h3 class="f-title">CI fails on its first run — formatting and lints were never applied</h3>
+          <p class="f-loc">.github/workflows/ci.yml:8–9, 36, 39</p>
+          <p>The workflow sets <code>RUSTFLAGS: -D warnings</code> globally and runs both <code>cargo fmt --all --check</code> and <code>clippy -D warnings</code>. I ran all three locally: formatting differs across multiple files, and there are roughly twenty warnings — unused imports (<code>mpsc</code>, <code>Arc</code>, <code>Context</code>, <code>warn</code>, <code>PeerId</code>), <code>filter_map</code> that should be <code>map</code>, <code>from_str</code> shadowing the <code>FromStr</code> trait, and dead code across all of <code>commands.rs</code>. Every job fails before the tests run.</p>
+          <p class="f-fix"><b>Fix</b>Run <code>cargo fmt --all</code> and <code>cargo clippy --fix</code>, then resolve the rest by hand — most of the dead-code warnings disappear once F-02 wires the commands up. Add a pre-commit hook so this can't drift again.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-31</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">Cargo.lock is gitignored for a workspace that ships binaries</h3>
+          <p class="f-loc">.gitignore:6</p>
+          <p>Applications should commit their lockfile. Without it, CI and every developer resolve dependencies independently, so a broken upstream release lands as an unreproducible failure and security review has no fixed dependency set to audit.</p>
+          <p class="f-fix"><b>Fix</b>Remove the <code>Cargo.lock</code> line from <code>.gitignore</code> and commit the lockfile.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-32</span><span class="chip c-minor">Minor</span></div>
+        <div class="f-body">
+          <h3 class="f-title">The Android CI job builds nothing Android</h3>
+          <p class="f-loc">.github/workflows/ci.yml:52–74</p>
+          <p>The job is titled "Build (Android Core &amp; APK Skeleton)". It installs <code>cargo-ndk</code> and never invokes it, never touches Gradle, and runs only <code>cargo check</code> — which doesn't link, so it cannot surface the NDK linker and ABI problems that actually break Android builds.</p>
+          <p class="f-fix"><b>Fix</b>Either build for real — <code>cargo ndk -t arm64-v8a build</code> plus <code>./gradlew assembleDebug</code> — or rename the job to describe what it does. A green check that proves nothing is worse than no check.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-33</span><span class="chip c-crit">Critical</span></div>
+        <div class="f-body">
+          <h3 class="f-title">The Android module cannot be opened, let alone built</h3>
+          <p class="f-loc">mobile-android/settings.gradle.kts:13 · app/build.gradle.kts:20</p>
+          <p><code>dependencyResolution { }</code> is not valid Gradle DSL — the block is <code>dependencyResolutionManagement</code> — so evaluation fails before anything else is attempted. The module also has no Gradle wrapper, no <code>AndroidManifest.xml</code>, no Kotlin source of any kind, and no <code>proguard-rules.pro</code> despite <code>build.gradle.kts</code> referencing it. The whole module is three build files.</p>
+          <p class="f-fix"><b>Fix</b>Rename the settings block, add the wrapper, and scaffold the minimum real app — manifest, <code>MainActivity</code>, one Compose screen, the proguard file. Then reduce the claim in <code>tasks.html</code> to match what exists.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-34</span><span class="chip c-crit">Critical</span></div>
+        <div class="f-body">
+          <h3 class="f-title">INV-04 is unmet: there is no UniFFI, and no .so can be produced</h3>
+          <p class="f-loc">core/Cargo.toml · mobile-android/app/build.gradle.kts:62–66</p>
+          <p>No <code>uniffi</code> dependency, no <code>.udl</code> file, no proc-macro exports, no build script, no <code>uniffi-bindgen</code> step. <code>core/Cargo.toml</code> also declares no <code>crate-type</code>, so it builds as an rlib only — <code>libshunkan_core.so</code> can never exist, and the Gradle comment pointing at <code>jniLibs/</code> describes a file nothing generates. Commit <code>be8ed60</code> says "uniffi ffi bindings setup"; there is none.</p>
+          <p class="f-fix"><b>Fix</b>Add <code>crate-type = ["cdylib", "staticlib", "rlib"]</code>, take the <code>uniffi</code> dependency, and export the surface Android needs — discovery, pairing, send, receive-callback — via proc-macros. Add a <code>cargo-ndk</code> build step that emits the ABIs into <code>jniLibs/</code> and a bindgen step that generates the Kotlin.</p>
+        </div>
+      </article>
+
+      <article class="finding">
+        <div class="f-gutter"><span class="f-id">F-35</span><span class="chip c-major">Major</span></div>
+        <div class="f-body">
+          <h3 class="f-title">The Android clipboard-read path has no viable design</h3>
+          <p class="f-loc">mobile-android/app/build.gradle.kts:13</p>
+          <p><code>minSdk = 29</code> is commented "Android 10+ required for clipboard restrictions", but Android 10 is precisely where background clipboard reads were <em>removed</em>: only the default IME or the focused app may read it. INV-03 rules out polling and prohibits AccessibilityService. So the desktop's poll-based model cannot be ported, and no alternative exists in code.</p>
+          <p class="f-fix"><b>Fix</b>Commit to the event-driven surfaces the invariant already names: a <code>ShunkanIME</code> <code>InputMethodService</code> for capture, a <code>ShareTarget</code> for explicit sends, and a <code>TileService</code> for the quick toggle. Decide this before writing Kotlin — it determines the entire module's architecture, and it means Android→desktop clipboard sync is user-initiated by design, not automatic. That should be reflected in the PRD.</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Suggested repair sequence</h2>
+      <p>Ordered by dependency, not severity — each phase makes the next one testable. The phases are a real sequence; don't reorder them.</p>
+    </div>
+
+    <div class="phases">
+
+      <div class="phase">
+        <div class="phase-num">Phase 1</div>
+        <div class="phase-body">
+          <h3>Make one link actually work</h3>
+          <p>Persistent device identity and a real trust model, addresses and TXT records on the wire, the daemon wired to the core, and stream discipline so messages arrive in order.</p>
+          <p class="refs">F-01 · F-02 · F-03 · F-04 · F-08 · F-19</p>
+          <p class="exit"><b>Exit</b> &nbsp;Two Linux machines on one LAN discover each other and sync a line of text, driven entirely through the public API.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-num">Phase 2</div>
+        <div class="phase-body">
+          <h3>Stop the bleeding</h3>
+          <p>The panic, the vanishing X11 writes, the permanent clipboard block, the attribute injection, the unbounded allocation — plus getting CI green so it starts catching regressions instead of failing on formatting.</p>
+          <p class="refs">F-05 · F-06 · F-07 · F-11 · F-17 · F-18 · F-30 · F-31</p>
+          <p class="exit"><b>Exit</b> &nbsp;A day of real use across CJK text, large images, and daemon restarts produces no panics and no lost clipboard writes.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-num">Phase 3</div>
+        <div class="phase-body">
+          <h3>Make pairing mean something</h3>
+          <p>Replace the decorative PIN with a PAKE bound to certificate fingerprints, enforce authorization on every connection, and either implement or delete the X25519 placeholder. This is the phase that makes the privacy claim true.</p>
+          <p class="refs">F-14 · F-15 · F-16</p>
+          <p class="exit"><b>Exit</b> &nbsp;An unpaired device on the same network cannot read, inject, or observe clipboard content — verified by a test that tries.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-num">Phase 4</div>
+        <div class="phase-body">
+          <h3>Meet the stated numbers</h3>
+          <p>Binary wire format, byte-budgeted history, streaming chunk hashing, and event-driven clipboard capture. Add benchmarks and an idle-RSS check to CI so INV-01 and the latency target become enforced rather than aspirational.</p>
+          <p class="refs">F-20 · F-21 · F-22 · F-23 · F-24 · F-10 · F-25</p>
+          <p class="exit"><b>Exit</b> &nbsp;Measured copy-to-paste latency and idle RSS are recorded in CI against the PRD's targets.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-num">Phase 5</div>
+        <div class="phase-body">
+          <h3>Build the actual desktop app</h3>
+          <p>Adopt Tauri v2 properly — dependency, config, registered commands, real IPC — then fix the palette's search, selection, and keyboard behaviour on top of a backend that responds.</p>
+          <p class="refs">F-26 · F-27 · F-28 · F-29 · F-12 · F-13</p>
+          <p class="exit"><b>Exit</b> &nbsp;The palette runs against live data with the mock path removed from the default build.</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-num">Phase 6</div>
+        <div class="phase-body">
+          <h3>Start Android for real</h3>
+          <p>Fix the Gradle DSL and scaffold a buildable app, stand up UniFFI and the cdylib so a native library exists, and settle the IME/ShareTarget capture design before writing feature code.</p>
+          <p class="refs">F-33 · F-34 · F-35 · F-32</p>
+          <p class="exit"><b>Exit</b> &nbsp;A debug APK installs and completes one round trip with a Linux peer.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>What's solid</h2>
+      <p>Worth stating plainly, because the list above is long and the foundations are not the problem.</p>
+    </div>
+
+    <div class="solid">
+      <div class="solid-cell">
+        <h4>Module boundaries</h4>
+        <p>The split across crypto, discovery, transport, protocol, history, and hashing is clean, and the core has no UI dependencies. The structure will hold as the gaps get filled.</p>
+      </div>
+      <div class="solid-cell">
+        <h4>The hashing module</h4>
+        <p>Correct BLAKE3 throughout, with a genuinely useful incremental <code>StreamHasher</code>. INV-05 is honoured with no SHA-256 anywhere. Only the misnamed Merkle function needs attention.</p>
+      </div>
+      <div class="solid-cell">
+        <h4>Protocol types</h4>
+        <p>Well-chosen message shapes, content-addressed by hash, with a sensible length-prefixed framing scheme. The types survive a codec swap unchanged — only the encoding is wrong.</p>
+      </div>
+      <div class="solid-cell">
+        <h4>Session detection</h4>
+        <p>The X11 / wlroots / GNOME detection logic is thorough and correctly prioritizes <code>XDG_SESSION_TYPE</code> with a <code>WAYLAND_DISPLAY</code> fallback. It just isn't used to select a strategy yet.</p>
+      </div>
+      <div class="solid-cell">
+        <h4>Test hygiene</h4>
+        <p>74 tests pass, and they're readable and well-named. The problem is coverage shape, not quality — they test units in isolation and never cross a real boundary.</p>
+      </div>
+      <div class="solid-cell">
+        <h4>Documentation</h4>
+        <p>Doc comments are unusually complete, and the invariants in <code>memory.html</code> are specific enough to audit against — which is what made most of this review possible.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>One process note</h2>
+    </div>
+    <p>The commit log says "implement complete shunkan-core library", "implement desktop-linux tauri daemon", and "implement android project skeleton and uniffi ffi bindings setup". In fact the transport cannot connect, the daemon contains no Tauri and calls no core module, and there is no UniFFI anywhere in the repository.</p>
+    <p>The green test suite reinforces this: 74 passing tests, none of which crosses a module boundary in the way the product does. <code>memory.html</code> asks future agents to mark tasks complete once "automated tests pass" — that gate is currently satisfied by tests that would pass even if the transport were deleted.</p>
+    <p>Worth tightening the definition of done to something the tests can't fake: an integration test that stands up two real endpoints through the public API and syncs a clipboard item end to end. That single test would have caught F-01, F-02, F-08, F-10, and F-16.</p>
+  </section>
+
+  <footer>
+    Audit of ephraim-9/shunkan at df2721c · 3,232 lines across core, desktop-linux, mobile-android<br>
+    Findings verified by building the workspace, running the full test suite, and reproducing F-01, F-05, and F-20 directly.
+  </footer>
+
+</div>
