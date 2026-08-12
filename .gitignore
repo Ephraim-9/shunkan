@@ -6,6 +6,9 @@
 # broken upstream release lands as an unreproducible failure and a security
 # review has no fixed set to audit.
 
+# Tauri generates capability schemas at build time.
+desktop-linux/src-tauri/gen/schemas/
+
 # Android / Gradle
 .gradle/
 build/

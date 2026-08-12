@@ -15,7 +15,36 @@ use shunkan_core::trust::TrustStore;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
+
+/// A change the UI should know about.
+///
+/// Deliberately coarse: the palette re-reads the relevant list when it sees one,
+/// rather than trying to apply a diff. That keeps the event a *notification*
+/// and the IPC commands the single source of truth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiEvent {
+    /// Clipboard history gained, lost, or reordered an entry.
+    HistoryChanged,
+    /// A peer connected or disconnected.
+    PeersChanged,
+}
+
+impl UiEvent {
+    /// The event name the frontend listens for.
+    pub fn name(&self) -> &'static str {
+        match self {
+            UiEvent::HistoryChanged => "shunkan://history-changed",
+            UiEvent::PeersChanged => "shunkan://peers-changed",
+        }
+    }
+}
+
+/// How many UI notifications may queue before the oldest are dropped.
+///
+/// Dropping is fine here: every event says "re-read", so a listener that missed
+/// some still converges on the right state from the next one it sees.
+const UI_EVENT_CAPACITY: usize = 32;
 
 /// Something to send to a connected peer.
 #[derive(Debug, Clone)]
@@ -80,6 +109,13 @@ pub struct AppState {
     pub pairing_attempts: AttemptLimiter,
     /// The PIN this device will pair with, when pairing mode is on.
     pairing_pin: Mutex<Option<PairingPin>>,
+    /// Broadcast channel for UI refresh notifications.
+    ///
+    /// The palette used to poll `get_history` every two seconds, which is both
+    /// wasteful and racy. State changes announce themselves here instead, and
+    /// the Tauri layer forwards them to the webview as events. Kept as a plain
+    /// broadcast channel so this module stays independent of Tauri.
+    ui_events: broadcast::Sender<UiEvent>,
     /// Clipboard history, shared with the IPC commands.
     history: Mutex<ClipboardHistory>,
     /// Currently connected peers, keyed by peer ID.
@@ -109,7 +145,18 @@ impl AppState {
             clipboard,
             pairing_attempts: AttemptLimiter::new(),
             pairing_pin: Mutex::new(None),
+            ui_events: broadcast::channel(UI_EVENT_CAPACITY).0,
         }
+    }
+
+    /// Subscribe to UI refresh notifications.
+    pub fn subscribe_ui(&self) -> broadcast::Receiver<UiEvent> {
+        self.ui_events.subscribe()
+    }
+
+    /// Announce a change to any UI listeners. A no-op when nothing is listening.
+    pub fn notify_ui(&self, event: UiEvent) {
+        let _ = self.ui_events.send(event);
     }
 
     /// This device's peer ID.
@@ -142,7 +189,11 @@ impl AppState {
     /// Returns `true` if it was new, `false` if it deduplicated against an
     /// entry already present.
     pub fn record_clipboard(&self, item: ClipboardItem) -> bool {
-        self.lock_history().push(item)
+        let added = self.lock_history().push(item);
+        // Announce either way: a duplicate still moves to the front and
+        // refreshes its timestamp, which the palette renders.
+        self.notify_ui(UiEvent::HistoryChanged);
+        added
     }
 
     /// Look up a history entry by its BLAKE3 content hash.
@@ -170,12 +221,14 @@ impl AppState {
             handle.addr
         );
         self.lock_peers().insert(id, handle);
+        self.notify_ui(UiEvent::PeersChanged);
     }
 
     /// Drop a peer that has disconnected.
     pub fn remove_peer(&self, id: &PeerId) {
         if self.lock_peers().remove(id).is_some() {
             log::info!("Peer disconnected: {}", id);
+            self.notify_ui(UiEvent::PeersChanged);
         }
     }
 
