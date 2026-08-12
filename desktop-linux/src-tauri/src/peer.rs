@@ -7,14 +7,18 @@
 
 use crate::state::{now_secs, AppState, Outbound, PeerHandle};
 use anyhow::{bail, Context, Result};
+use shunkan_core::pairing::{ChannelBinding, PairingRole, PairingSession};
 use shunkan_core::protocol::{ContentType, Handshake, Message, PeerInfo};
-use shunkan_core::transport::TransportConnection;
+use shunkan_core::transport::{ControlChannel, TransportConnection};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
 /// How long a peer has to complete the handshake before we hang up.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long each step of the pairing exchange may take.
+const PAIRING_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Which side of the connection we are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,37 +53,57 @@ pub async fn serve(state: Arc<AppState>, conn: TransportConnection, role: Role) 
         Role::Listener => conn.accept_control().await?,
     };
 
+    // Mutual TLS means both sides authenticated a certificate; without a
+    // fingerprint we cannot bind a pairing to this channel, so there is nothing
+    // safe to do with the connection.
+    let fingerprint =
+        fingerprint.ok_or_else(|| anyhow::anyhow!("Peer at {} presented no certificate", addr))?;
+
     // Send ours first so neither side waits on the other to speak.
     control
-        .send(&Message::Handshake(Handshake::new(
-            state.peer_info.clone(),
-            None,
-        )))
+        .send(&Message::Handshake(Handshake::new(state.peer_info.clone())))
         .await
         .context("Failed to send handshake")?;
 
+    // F-16: the first frame on a new connection must be a handshake, and it
+    // must arrive promptly. Anything else closes the connection.
     let peer_info = tokio::time::timeout(HANDSHAKE_TIMEOUT, control.recv())
         .await
         .map_err(|_| anyhow::anyhow!("Peer at {} did not complete a handshake in time", addr))?
         .context("Failed to read peer handshake")
         .and_then(|msg| match msg {
             Message::Handshake(hs) => Ok(hs.peer_info),
-            other => bail!("Expected a handshake from {}, got {:?}", addr, other),
+            other => bail!(
+                "Expected a handshake as the first frame from {}, got {:?}",
+                addr,
+                other
+            ),
         })?;
 
     if peer_info.id == state.peer_info.id {
         bail!("Refusing to connect to ourselves ({})", peer_info.id);
     }
 
-    // Attach the real device metadata to whatever the TLS layer pinned.
-    if let Some(fp) = &fingerprint {
-        if let Err(e) = state.trust.promote_provisional(
-            fp,
-            &peer_info.id.0,
-            &peer_info.device_name,
-            &peer_info.platform,
-        ) {
-            log::warn!("Failed to update trust record for {}: {}", peer_info.id, e);
+    // A certificate pinned during trust-on-first-use is not yet a pairing: it
+    // is enough to carry the PIN exchange and nothing else. Run that exchange
+    // now, and tear the connection down if it fails.
+    if !state.trust.is_trusted_fingerprint(&fingerprint) {
+        match run_pairing(&state, &mut control, &peer_info, &fingerprint, role).await {
+            Ok(()) => {}
+            Err(e) => {
+                // Do not leave a usable pin behind after a failed attempt.
+                if let Err(cleanup) = state.trust.forget_unconfirmed_fingerprint(&fingerprint) {
+                    log::warn!("Failed to drop the unconfirmed pin: {}", cleanup);
+                }
+                let _ = control
+                    .send(&Message::PairingResult {
+                        accepted: false,
+                        reason: Some(e.to_string()),
+                    })
+                    .await;
+                conn.close();
+                return Err(e.context(format!("Pairing with {} failed", peer_info.device_name)));
+            }
         }
     }
 
@@ -91,7 +115,7 @@ pub async fn serve(state: Arc<AppState>, conn: TransportConnection, role: Role) 
     state.add_peer(PeerHandle::new(
         peer_info.clone(),
         addr,
-        fingerprint,
+        Some(fingerprint),
         tx.clone(),
     ));
 
@@ -120,6 +144,133 @@ pub async fn serve(state: Arc<AppState>, conn: TransportConnection, role: Role) 
     conn.close();
 
     result
+}
+
+/// Run the PIN pairing exchange over an established, provisionally trusted
+/// connection.
+///
+/// On success the peer's certificate is promoted to a confirmed pairing and
+/// will be accepted on every future connection without a PIN. On failure the
+/// caller drops the provisional pin and closes the connection.
+async fn run_pairing(
+    state: &Arc<AppState>,
+    control: &mut ControlChannel,
+    peer_info: &PeerInfo,
+    peer_fingerprint: &str,
+    role: Role,
+) -> Result<()> {
+    let Some(pin) = state.pairing_pin() else {
+        bail!(
+            "{} is not a paired device and no pairing PIN is configured — start \
+             the daemon with {}=<6 digits> on both devices to pair them",
+            peer_info.device_name,
+            crate::PAIRING_PIN_ENV
+        );
+    };
+
+    // A PAKE gives an attacker one online guess per exchange. Over a six-digit
+    // space that is still 10^6 exchanges, so ration the guesses too.
+    state
+        .pairing_attempts
+        .check(&peer_info.id.0)
+        .context("Pairing refused")?;
+
+    let pairing_role = match role {
+        Role::Dialer => PairingRole::Initiator,
+        Role::Listener => PairingRole::Responder,
+    };
+    let (initiator_id, responder_id) = match pairing_role {
+        PairingRole::Initiator => (state.peer_id().0.clone(), peer_info.id.0.clone()),
+        PairingRole::Responder => (peer_info.id.0.clone(), state.peer_id().0.clone()),
+    };
+
+    let binding = ChannelBinding::new(pairing_role, state.identity.fingerprint(), peer_fingerprint);
+
+    log::info!(
+        "Starting PIN pairing with {} as {:?}",
+        peer_info.device_name,
+        pairing_role
+    );
+
+    let session = PairingSession::start(&pin, pairing_role, &initiator_id, &responder_id, binding);
+
+    control
+        .send(&Message::PairingHello {
+            spake: session.outbound_message().to_vec(),
+        })
+        .await
+        .context("Failed to send the pairing message")?;
+
+    let peer_spake = match recv_within(control, PAIRING_TIMEOUT).await? {
+        Message::PairingHello { spake } => spake,
+        other => bail!("Expected a pairing message, got {:?}", other),
+    };
+
+    let confirmation = match session.finish(&peer_spake) {
+        Ok(confirmation) => confirmation,
+        Err(e) => {
+            state.pairing_attempts.record_failure(&peer_info.id.0);
+            return Err(e);
+        }
+    };
+
+    control
+        .send(&Message::PairingConfirm {
+            mac: confirmation.our_mac(),
+        })
+        .await
+        .context("Failed to send the pairing confirmation")?;
+
+    let peer_mac = match recv_within(control, PAIRING_TIMEOUT).await? {
+        Message::PairingConfirm { mac } => mac,
+        Message::PairingResult { reason, .. } => {
+            state.pairing_attempts.record_failure(&peer_info.id.0);
+            bail!(
+                "{} rejected the pairing: {}",
+                peer_info.device_name,
+                reason.unwrap_or_else(|| "no reason given".into())
+            );
+        }
+        other => bail!("Expected a pairing confirmation, got {:?}", other),
+    };
+
+    if !confirmation.verify_peer_mac(&peer_mac) {
+        state.pairing_attempts.record_failure(&peer_info.id.0);
+        bail!(
+            "Pairing confirmation from {} did not verify — wrong PIN, or the \
+             connection is being relayed",
+            peer_info.device_name
+        );
+    }
+
+    state.pairing_attempts.record_success(&peer_info.id.0);
+    state
+        .trust
+        .confirm(
+            peer_fingerprint,
+            &peer_info.id.0,
+            &peer_info.device_name,
+            &peer_info.platform,
+        )
+        .context("Failed to record the confirmed pairing")?;
+
+    control
+        .send(&Message::PairingResult {
+            accepted: true,
+            reason: None,
+        })
+        .await
+        .context("Failed to send the pairing result")?;
+
+    log::info!("Paired with {} ({})", peer_info.device_name, peer_info.id);
+    Ok(())
+}
+
+/// Receive the next control message, failing if it does not arrive in time.
+async fn recv_within(control: &mut ControlChannel, timeout: Duration) -> Result<Message> {
+    tokio::time::timeout(timeout, control.recv())
+        .await
+        .map_err(|_| anyhow::anyhow!("Peer did not respond within {:?}", timeout))?
 }
 
 /// Apply inbound messages until the connection ends.
@@ -156,6 +307,17 @@ async fn receive_loop(
             }
             Message::Handshake(_) => {
                 log::warn!("Ignoring repeat handshake from {}", peer_info.device_name);
+            }
+            Message::PairingHello { .. }
+            | Message::PairingConfirm { .. }
+            | Message::PairingResult { .. } => {
+                // Pairing runs to completion before this loop starts. A pairing
+                // message here means the peer is trying to re-run the exchange
+                // on an already-trusted connection, which is not a thing.
+                log::warn!(
+                    "Ignoring out-of-band pairing message from {}",
+                    peer_info.device_name
+                );
             }
             Message::FileChunk(chunk) => {
                 // File transfers use their own streams; a chunk on the control

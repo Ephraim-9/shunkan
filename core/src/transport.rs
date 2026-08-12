@@ -143,9 +143,14 @@ impl TransportServer {
     /// Create and start a new QUIC transport server.
     ///
     /// Presents `identity`'s persisted certificate, so a peer that paired with
-    /// this device in an earlier run still recognizes it.
-    pub async fn start(config: TransportConfig, identity: &DeviceIdentity) -> Result<Self> {
-        let mut server_config = crypto::quinn_server_config(identity)
+    /// this device in an earlier run still recognizes it, and requires the
+    /// inbound peer to present a certificate pinned in `trust`.
+    pub async fn start(
+        config: TransportConfig,
+        identity: &DeviceIdentity,
+        trust: Arc<TrustStore>,
+    ) -> Result<Self> {
+        let mut server_config = crypto::quinn_server_config(identity, trust)
             .context("Failed to build QUIC server config from device identity")?;
         server_config.transport_config(quinn_transport_config());
 
@@ -203,15 +208,24 @@ pub struct TransportClient {
 }
 
 impl TransportClient {
-    /// Create a new transport client that pins peers by certificate fingerprint.
-    pub fn new(trust: Arc<TrustStore>) -> Result<Self> {
-        Self::bind("0.0.0.0:0".parse().expect("valid wildcard address"), trust)
+    /// Create a new transport client that pins peers by certificate fingerprint
+    /// and presents `identity` for the peer to authenticate in turn.
+    pub fn new(identity: &DeviceIdentity, trust: Arc<TrustStore>) -> Result<Self> {
+        Self::bind(
+            "0.0.0.0:0".parse().expect("valid wildcard address"),
+            identity,
+            trust,
+        )
     }
 
     /// Create a transport client bound to a specific local address.
-    pub fn bind(bind_addr: SocketAddr, trust: Arc<TrustStore>) -> Result<Self> {
-        let mut client_config =
-            crypto::quinn_client_config(trust).context("Failed to build QUIC client config")?;
+    pub fn bind(
+        bind_addr: SocketAddr,
+        identity: &DeviceIdentity,
+        trust: Arc<TrustStore>,
+    ) -> Result<Self> {
+        let mut client_config = crypto::quinn_client_config(identity, trust)
+            .context("Failed to build QUIC client config")?;
         client_config.transport_config(quinn_transport_config());
 
         let mut endpoint =
@@ -496,18 +510,39 @@ mod tests {
     use crate::protocol::PeerId;
     use crate::trust::PairedPeer;
 
-    /// Build a server identity, a client trust store that already pins it, and
-    /// a running server — i.e. exactly the state two devices are in after
-    /// pairing. Everything goes through the public API.
-    async fn paired_server() -> (DeviceIdentity, Arc<TrustStore>, TransportServer, SocketAddr) {
-        let identity = DeviceIdentity::generate().unwrap();
-        let trust = Arc::new(TrustStore::in_memory());
-        trust
+    /// Two devices that have already paired: each pins the other's certificate
+    /// fingerprint, and the server is running. Everything goes through the
+    /// public API — no hand-built TLS configuration anywhere.
+    ///
+    /// Returns (server identity, client identity, client trust store, server,
+    /// server address).
+    async fn paired_server() -> (
+        DeviceIdentity,
+        DeviceIdentity,
+        Arc<TrustStore>,
+        TransportServer,
+        SocketAddr,
+    ) {
+        let server_identity = DeviceIdentity::generate().unwrap();
+        let client_identity = DeviceIdentity::generate().unwrap();
+
+        let server_trust = Arc::new(TrustStore::in_memory());
+        server_trust
             .pair(PairedPeer::new(
-                identity.peer_id().0.clone(),
+                client_identity.peer_id().0.clone(),
+                "Client",
+                "linux",
+                client_identity.fingerprint(),
+            ))
+            .unwrap();
+
+        let client_trust = Arc::new(TrustStore::in_memory());
+        client_trust
+            .pair(PairedPeer::new(
+                server_identity.peer_id().0.clone(),
                 "Server",
                 "linux",
-                identity.fingerprint(),
+                server_identity.fingerprint(),
             ))
             .unwrap();
 
@@ -516,13 +551,14 @@ mod tests {
                 bind_addr: "127.0.0.1:0".parse().unwrap(),
                 keep_alive_ms: 5000,
             },
-            &identity,
+            &server_identity,
+            server_trust,
         )
         .await
         .unwrap();
         let addr = server.local_addr().unwrap();
 
-        (identity, trust, server, addr)
+        (server_identity, client_identity, client_trust, server, addr)
     }
 
     #[test]
@@ -548,7 +584,9 @@ mod tests {
             bind_addr: "127.0.0.1:0".parse().unwrap(), // OS-assigned port
             keep_alive_ms: 5000,
         };
-        let server = TransportServer::start(config, &identity).await.unwrap();
+        let server = TransportServer::start(config, &identity, Arc::new(TrustStore::in_memory()))
+            .await
+            .unwrap();
         let addr = server.local_addr().unwrap();
         assert!(addr.port() > 0);
         server.shutdown();
@@ -556,7 +594,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_creation() {
-        let client = TransportClient::new(Arc::new(TrustStore::in_memory()));
+        let identity = DeviceIdentity::generate().unwrap();
+        let client = TransportClient::new(&identity, Arc::new(TrustStore::in_memory()));
         assert!(client.is_ok());
         if let Ok(c) = client {
             c.shutdown();
@@ -568,7 +607,7 @@ mod tests {
     /// only itself. It drives the real public API — no hand-built configs.
     #[tokio::test]
     async fn test_paired_peers_complete_a_roundtrip_through_the_public_api() {
-        let (identity, trust, server, addr) = paired_server().await;
+        let (identity, client_identity, trust, server, addr) = paired_server().await;
 
         let server_task = tokio::spawn(async move {
             let conn = server.accept().await.unwrap().expect("no incoming");
@@ -585,7 +624,7 @@ mod tests {
             msg
         });
 
-        let client = TransportClient::new(trust).unwrap();
+        let client = TransportClient::new(&client_identity, trust).unwrap();
         let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
         let mut control = conn.open_control().await.unwrap();
         control
@@ -605,6 +644,8 @@ mod tests {
 
     /// An unpaired peer must not get a connection at all — the fingerprint is
     /// checked during the TLS handshake, before any application data flows.
+    /// An unpaired peer must not get a connection at all — the fingerprint is
+    /// checked during the TLS handshake, before any application data flows.
     #[tokio::test]
     async fn test_unpaired_client_cannot_connect() {
         let identity = DeviceIdentity::generate().unwrap();
@@ -614,6 +655,7 @@ mod tests {
                 keep_alive_ms: 5000,
             },
             &identity,
+            Arc::new(TrustStore::in_memory()),
         )
         .await
         .unwrap();
@@ -624,24 +666,99 @@ mod tests {
         });
 
         // Empty trust store, pairing mode off.
-        let client = TransportClient::new(Arc::new(TrustStore::in_memory())).unwrap();
+        let client_identity = DeviceIdentity::generate().unwrap();
+        let client =
+            TransportClient::new(&client_identity, Arc::new(TrustStore::in_memory())).unwrap();
         let result = client.connect(addr, &identity.dns_name()).await;
 
         assert!(result.is_err(), "unpaired peer must be refused");
         client.shutdown();
     }
 
+    /// The other half of F-16: even a client that trusts the server is refused
+    /// unless the *server* has pinned the client. Before mutual TLS, `accept()`
+    /// returned every incoming connection with no validation at all.
+    #[tokio::test]
+    async fn test_server_refuses_a_client_it_has_not_pinned() {
+        let server_identity = DeviceIdentity::generate().unwrap();
+        let client_identity = DeviceIdentity::generate().unwrap();
+
+        // The server pins nobody.
+        let server = TransportServer::start(
+            TransportConfig {
+                bind_addr: "127.0.0.1:0".parse().unwrap(),
+                keep_alive_ms: 5000,
+            },
+            &server_identity,
+            Arc::new(TrustStore::in_memory()),
+        )
+        .await
+        .unwrap();
+        let addr = server.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = server.accept().await;
+        });
+
+        // The client, however, trusts the server perfectly well.
+        let client_trust = Arc::new(TrustStore::in_memory());
+        client_trust
+            .pair(PairedPeer::new(
+                server_identity.peer_id().0.clone(),
+                "Server",
+                "linux",
+                server_identity.fingerprint(),
+            ))
+            .unwrap();
+
+        let client = TransportClient::new(&client_identity, client_trust).unwrap();
+
+        // In TLS 1.3 the client's certificate is verified *after* the server's
+        // Finished, so the client can believe the handshake succeeded and can
+        // even open a stream locally — opening one takes no round trip. The
+        // rejection surfaces the moment it tries to exchange data, which is the
+        // property that actually matters.
+        let refused = match client.connect(addr, &server_identity.dns_name()).await {
+            Err(_) => true,
+            Ok(conn) => {
+                let attempt = async {
+                    let mut control = conn.open_control().await?;
+                    control.send(&Message::Ping { timestamp: 1 }).await?;
+                    control.recv().await
+                };
+                let outcome =
+                    tokio::time::timeout(std::time::Duration::from_secs(3), attempt).await;
+                // Either the exchange errored, or it never produced a reply.
+                !matches!(outcome, Ok(Ok(_)))
+            }
+        };
+
+        assert!(
+            refused,
+            "a client the server has not pinned must be refused"
+        );
+        client.shutdown();
+    }
+
     /// Pairing mode pins the certificate on first sight, so the connection
     /// succeeds and the fingerprint is remembered for next time.
+    /// Pairing mode pins the certificate on first sight so the PIN exchange can
+    /// run — but a pin alone is *not* a pairing. The fingerprint stays
+    /// unconfirmed until `TrustStore::confirm`, so pairing mode can never be a
+    /// blanket "trust anyone who connects while the window is open".
     #[tokio::test]
-    async fn test_pairing_mode_pins_on_first_connection() {
+    async fn test_pairing_mode_pins_provisionally_not_operationally() {
         let identity = DeviceIdentity::generate().unwrap();
+        let client_identity = DeviceIdentity::generate().unwrap();
+
+        let server_trust = Arc::new(TrustStore::in_memory());
+        server_trust.set_pairing_mode(true);
         let server = TransportServer::start(
             TransportConfig {
                 bind_addr: "127.0.0.1:0".parse().unwrap(),
                 keep_alive_ms: 5000,
             },
             &identity,
+            server_trust,
         )
         .await
         .unwrap();
@@ -657,12 +774,20 @@ mod tests {
 
         let trust = Arc::new(TrustStore::in_memory());
         trust.set_pairing_mode(true);
-        let client = TransportClient::new(trust.clone()).unwrap();
+        let client = TransportClient::new(&client_identity, trust.clone()).unwrap();
 
         let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
         let mut control = conn.open_control().await.unwrap();
         control.send(&Message::Ping { timestamp: 1 }).await.unwrap();
 
+        // Pinned, so the exchange can proceed…
+        assert!(trust.is_pinned_fingerprint(identity.fingerprint()));
+        // …but not yet trusted for anything else.
+        assert!(!trust.is_trusted_fingerprint(identity.fingerprint()));
+
+        trust
+            .confirm(identity.fingerprint(), "peer-server", "Server", "linux")
+            .unwrap();
         assert!(trust.is_trusted_fingerprint(identity.fingerprint()));
 
         conn.close();
@@ -673,7 +798,7 @@ mod tests {
     /// Clipboard traffic keeps its order and its sequence numbers advance.
     #[tokio::test]
     async fn test_clipboard_messages_arrive_in_order() {
-        let (identity, trust, server, addr) = paired_server().await;
+        let (identity, client_identity, trust, server, addr) = paired_server().await;
 
         let server_task = tokio::spawn(async move {
             let conn = server.accept().await.unwrap().expect("no incoming");
@@ -690,7 +815,7 @@ mod tests {
             seen
         });
 
-        let client = TransportClient::new(trust).unwrap();
+        let client = TransportClient::new(&client_identity, trust).unwrap();
         let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
         let mut control = conn.open_control().await.unwrap();
 
@@ -723,7 +848,7 @@ mod tests {
     /// A replayed clipboard message must be dropped rather than delivered.
     #[tokio::test]
     async fn test_replayed_clipboard_message_is_dropped() {
-        let (identity, trust, server, addr) = paired_server().await;
+        let (identity, client_identity, trust, server, addr) = paired_server().await;
 
         let server_task = tokio::spawn(async move {
             let conn = server.accept().await.unwrap().expect("no incoming");
@@ -737,7 +862,7 @@ mod tests {
             (first, second)
         });
 
-        let client = TransportClient::new(trust).unwrap();
+        let client = TransportClient::new(&client_identity, trust).unwrap();
         let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
         let mut control = conn.open_control().await.unwrap();
 
@@ -782,7 +907,7 @@ mod tests {
     /// channel, so a large transfer cannot delay clipboard traffic.
     #[tokio::test]
     async fn test_file_stream_is_independent_of_control_channel() {
-        let (identity, trust, server, addr) = paired_server().await;
+        let (identity, client_identity, trust, server, addr) = paired_server().await;
 
         let server_task = tokio::spawn(async move {
             let conn = server.accept().await.unwrap().expect("no incoming");
@@ -793,7 +918,7 @@ mod tests {
             msg
         });
 
-        let client = TransportClient::new(trust).unwrap();
+        let client = TransportClient::new(&client_identity, trust).unwrap();
         let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
         let mut file = conn.open_file_stream().await.unwrap();
         let chunk = crate::protocol::FileChunk::new("tx-1", "a.bin", 4, 0, 1, vec![1, 2, 3, 4]);
@@ -811,7 +936,7 @@ mod tests {
     /// An attacker-supplied length prefix must never become an allocation.
     #[tokio::test]
     async fn test_oversized_frame_is_rejected_before_allocating() {
-        let (identity, trust, server, addr) = paired_server().await;
+        let (identity, client_identity, trust, server, addr) = paired_server().await;
 
         let server_task = tokio::spawn(async move {
             let conn = server.accept().await.unwrap().expect("no incoming");
@@ -822,7 +947,7 @@ mod tests {
             result
         });
 
-        let client = TransportClient::new(trust).unwrap();
+        let client = TransportClient::new(&client_identity, trust).unwrap();
         let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
         let mut stream = conn.open_file_stream().await.unwrap();
         // Claim a 4 GiB body without sending one.
@@ -864,7 +989,7 @@ mod tests {
     /// failure is a clear local error rather than a silent drop at the peer.
     #[tokio::test]
     async fn test_sender_refuses_oversized_frame() {
-        let (identity, trust, server, addr) = paired_server().await;
+        let (identity, client_identity, trust, server, addr) = paired_server().await;
 
         let server_task = tokio::spawn(async move {
             let conn = server.accept().await.unwrap().expect("no incoming");
@@ -873,7 +998,7 @@ mod tests {
             server.shutdown();
         });
 
-        let client = TransportClient::new(trust).unwrap();
+        let client = TransportClient::new(&client_identity, trust).unwrap();
         let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
         let mut stream = conn.open_file_stream().await.unwrap();
 
@@ -902,7 +1027,7 @@ mod tests {
     /// A peer cannot open unbounded streams to multiply the per-stream ceiling.
     #[tokio::test]
     async fn test_concurrent_uni_streams_are_capped() {
-        let (identity, trust, server, addr) = paired_server().await;
+        let (identity, client_identity, trust, server, addr) = paired_server().await;
 
         let server_task = tokio::spawn(async move {
             let conn = server.accept().await.unwrap().expect("no incoming");
@@ -913,7 +1038,7 @@ mod tests {
             server.shutdown();
         });
 
-        let client = TransportClient::new(trust).unwrap();
+        let client = TransportClient::new(&client_identity, trust).unwrap();
         let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
 
         let mut opened = 0usize;

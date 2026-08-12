@@ -6,6 +6,7 @@ use shunkan_core::crypto::PairingPin;
 use shunkan_core::hashing;
 use shunkan_core::history::ClipboardHistory;
 use shunkan_core::identity::DeviceIdentity;
+use shunkan_core::pairing::{ChannelBinding, PairingRole, PairingSession};
 use shunkan_core::protocol::*;
 use shunkan_core::transfer::FileReassembler;
 use shunkan_core::transport::{TransportClient, TransportConfig, TransportServer};
@@ -53,6 +54,7 @@ async fn test_two_devices_sync_a_clipboard_item_end_to_end() {
             ..TransportConfig::default()
         },
         &device_a,
+        trust_a.clone(),
     )
     .await
     .unwrap();
@@ -72,7 +74,7 @@ async fn test_two_devices_sync_a_clipboard_item_end_to_end() {
 
         // Handshake exchange
         control
-            .send(&Message::Handshake(Handshake::new(a_info_for_task, None)))
+            .send(&Message::Handshake(Handshake::new(a_info_for_task)))
             .await
             .unwrap();
         let peer_info = match control.recv().await.unwrap() {
@@ -103,7 +105,7 @@ async fn test_two_devices_sync_a_clipboard_item_end_to_end() {
     });
 
     // ── Device B dials
-    let client = TransportClient::new(trust_b).unwrap();
+    let client = TransportClient::new(&device_b, trust_b).unwrap();
     let conn = client
         .connect(server_addr, &device_a.dns_name())
         .await
@@ -111,10 +113,7 @@ async fn test_two_devices_sync_a_clipboard_item_end_to_end() {
 
     let mut control = conn.open_control().await.unwrap();
     control
-        .send(&Message::Handshake(Handshake::new(
-            b_peer_info.clone(),
-            None,
-        )))
+        .send(&Message::Handshake(Handshake::new(b_peer_info.clone())))
         .await
         .unwrap();
 
@@ -167,6 +166,7 @@ async fn test_unpaired_device_is_refused() {
             ..TransportConfig::default()
         },
         &device_a,
+        Arc::new(TrustStore::in_memory()),
     )
     .await
     .unwrap();
@@ -176,7 +176,9 @@ async fn test_unpaired_device_is_refused() {
     });
 
     // An empty trust store with pairing mode off — a stranger on café Wi-Fi.
-    let stranger = TransportClient::new(Arc::new(TrustStore::in_memory())).unwrap();
+    let stranger_identity = DeviceIdentity::generate().unwrap();
+    let stranger =
+        TransportClient::new(&stranger_identity, Arc::new(TrustStore::in_memory())).unwrap();
     let result = stranger.connect(addr, &device_a.dns_name()).await;
 
     assert!(
@@ -310,7 +312,7 @@ fn test_protocol_serialization_roundtrip() {
     let peer = PeerInfo::new(PeerId::new("test"), "TestDevice", "linux");
 
     let messages = vec![
-        Message::Handshake(Handshake::new(peer, Some("pinhash".into()))),
+        Message::Handshake(Handshake::new(peer)),
         Message::Clipboard {
             seq: 3,
             item: ClipboardItem::from_text("clipboard data", PeerId::new("p1")),
@@ -345,24 +347,180 @@ fn test_protocol_serialization_roundtrip() {
     }
 }
 
-/// Test PIN pairing workflow.
-#[test]
-fn test_pairing_workflow() {
-    // Device A generates a PIN and displays it
+/// The full PIN pairing workflow, end to end over a real QUIC connection.
+///
+/// Two devices that have never met complete a SPAKE2 exchange over the channel,
+/// confirm it against both TLS certificate fingerprints, and end up
+/// operationally trusting each other. The PIN never reaches the wire.
+#[tokio::test]
+async fn test_pin_pairing_promotes_strangers_to_trusted_peers() {
+    let device_a = DeviceIdentity::generate().unwrap();
+    let device_b = DeviceIdentity::generate().unwrap();
+
+    // Device A shows a PIN; the user types it into device B.
     let pin_a = PairingPin::generate();
-    let pin_str = pin_a.as_str().to_string();
-    let pin_hash = pin_a.hash();
+    let pin_b = PairingPin::parse(pin_a.as_str()).unwrap();
 
-    // Device B reads the PIN from the user
-    let pin_b = PairingPin::parse(&pin_str).unwrap();
+    // Neither device knows the other. Both open a pairing window.
+    let trust_a = Arc::new(TrustStore::in_memory());
+    trust_a.set_pairing_mode(true);
+    let trust_b = Arc::new(TrustStore::in_memory());
+    trust_b.set_pairing_mode(true);
 
-    // Device B computes its hash and sends it
-    let pin_b_hash = pin_b.hash();
+    let server = TransportServer::start(
+        TransportConfig {
+            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            ..TransportConfig::default()
+        },
+        &device_a,
+        trust_a.clone(),
+    )
+    .await
+    .unwrap();
+    let addr = server.local_addr().unwrap();
 
-    // They should match
-    assert_eq!(pin_hash, pin_b_hash);
-    assert!(pin_a.verify_hash(&pin_b_hash));
-    assert!(pin_b.verify_hash(&pin_hash));
+    let a_id = device_a.peer_id().0.clone();
+    let b_id = device_b.peer_id().0.clone();
+    let a_fp = device_a.fingerprint().to_string();
+    let b_fp = device_b.fingerprint().to_string();
+    let a_fp_for_task = a_fp.clone();
+
+    // Device A: the listener, so the SPAKE2 responder.
+    let (responder_a_id, responder_b_id) = (b_id.clone(), a_id.clone());
+    let listener_task = tokio::spawn(async move {
+        let conn = server.accept().await.unwrap().expect("no incoming");
+        let peer_fp = conn.peer_fingerprint().expect("mutual TLS gives us a cert");
+        let mut control = conn.accept_control().await.unwrap();
+
+        let session = PairingSession::start(
+            &pin_a,
+            PairingRole::Responder,
+            &responder_a_id,
+            &responder_b_id,
+            ChannelBinding::new(PairingRole::Responder, &a_fp_for_task, &peer_fp),
+        );
+        control
+            .send(&Message::PairingHello {
+                spake: session.outbound_message().to_vec(),
+            })
+            .await
+            .unwrap();
+
+        let peer_spake = match control.recv().await.unwrap() {
+            Message::PairingHello { spake } => spake,
+            other => panic!("expected PairingHello, got {:?}", other),
+        };
+        let confirmation = session.finish(&peer_spake).unwrap();
+
+        control
+            .send(&Message::PairingConfirm {
+                mac: confirmation.our_mac(),
+            })
+            .await
+            .unwrap();
+        let peer_mac = match control.recv().await.unwrap() {
+            Message::PairingConfirm { mac } => mac,
+            other => panic!("expected PairingConfirm, got {:?}", other),
+        };
+
+        let ok = confirmation.verify_peer_mac(&peer_mac);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        conn.close();
+        server.shutdown();
+        (ok, peer_fp)
+    });
+
+    // Device B: the dialer, so the SPAKE2 initiator.
+    let client = TransportClient::new(&device_b, trust_b.clone()).unwrap();
+    let conn = client.connect(addr, &device_a.dns_name()).await.unwrap();
+    let peer_fp = conn.peer_fingerprint().expect("server cert");
+    let mut control = conn.open_control().await.unwrap();
+
+    let session = PairingSession::start(
+        &pin_b,
+        PairingRole::Initiator,
+        &b_id,
+        &a_id,
+        ChannelBinding::new(PairingRole::Initiator, &b_fp, &peer_fp),
+    );
+    control
+        .send(&Message::PairingHello {
+            spake: session.outbound_message().to_vec(),
+        })
+        .await
+        .unwrap();
+
+    let peer_spake = match control.recv().await.unwrap() {
+        Message::PairingHello { spake } => spake,
+        other => panic!("expected PairingHello, got {:?}", other),
+    };
+    let confirmation = session.finish(&peer_spake).unwrap();
+
+    let peer_mac = match control.recv().await.unwrap() {
+        Message::PairingConfirm { mac } => mac,
+        other => panic!("expected PairingConfirm, got {:?}", other),
+    };
+    control
+        .send(&Message::PairingConfirm {
+            mac: confirmation.our_mac(),
+        })
+        .await
+        .unwrap();
+
+    assert!(
+        confirmation.verify_peer_mac(&peer_mac),
+        "device B must confirm device A"
+    );
+
+    let (listener_ok, b_fp_seen_by_a) = listener_task.await.unwrap();
+    assert!(listener_ok, "device A must confirm device B");
+    assert_eq!(b_fp_seen_by_a, b_fp, "mutual TLS identifies the dialer too");
+
+    // Confirming the pairing is what makes each device operationally trusted.
+    assert!(!trust_b.is_trusted_fingerprint(&a_fp), "not yet confirmed");
+    trust_b.confirm(&a_fp, &a_id, "Device A", "linux").unwrap();
+    trust_a.confirm(&b_fp, &b_id, "Device B", "linux").unwrap();
+
+    assert!(trust_b.is_trusted_fingerprint(&a_fp));
+    assert!(trust_a.is_trusted_fingerprint(&b_fp));
+
+    conn.close();
+    client.shutdown();
+}
+
+/// A wrong PIN must not produce a pairing, even though the TLS channel is fine.
+#[test]
+fn test_wrong_pin_does_not_confirm() {
+    let a_fp = "aaaa".repeat(16);
+    let b_fp = "bbbb".repeat(16);
+
+    let right = PairingPin::parse("123456").unwrap();
+    let wrong = PairingPin::parse("654321").unwrap();
+
+    let a = PairingSession::start(
+        &right,
+        PairingRole::Initiator,
+        "peer-a",
+        "peer-b",
+        ChannelBinding::new(PairingRole::Initiator, &a_fp, &b_fp),
+    );
+    let b = PairingSession::start(
+        &wrong,
+        PairingRole::Responder,
+        "peer-a",
+        "peer-b",
+        ChannelBinding::new(PairingRole::Responder, &b_fp, &a_fp),
+    );
+
+    let msg_a = a.outbound_message().to_vec();
+    let msg_b = b.outbound_message().to_vec();
+
+    // SPAKE2 rejecting outright is an equally good outcome; if it does produce
+    // keys, they must not confirm against each other.
+    if let (Ok(conf_a), Ok(conf_b)) = (a.finish(&msg_b), b.finish(&msg_a)) {
+        assert!(!conf_a.verify_peer_mac(&conf_b.our_mac()));
+        assert!(!conf_b.verify_peer_mac(&conf_a.our_mac()));
+    }
 }
 
 /// Test deduplication across clipboard sync.
