@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Shunkan</string>
+    <string name="ime_name">Shunkan Keyboard</string>
+    <string name="share_to_shunkan">Send with Shunkan</string>
+
+    <string name="tile_label">Shunkan sync</string>
+    <string name="tile_on">Sync on</string>
+    <string name="tile_off">Sync off</string>
+
+    <string name="sync_channel_name">Clipboard sync</string>
+    <string name="sync_running">Shunkan is syncing your clipboard</string>
+
+    <string name="share_nothing_to_send">Nothing to send</string>
+    <string name="share_sync_off">Turn Shunkan sync on first</string>
+    <string name="share_no_peers">No paired devices are online</string>
+    <string name="share_failed">Could not send</string>
+
+    <plurals name="share_sent">
+        <item quantity="one">Sent to %d device</item>
+        <item quantity="other">Sent to %d devices</item>
+    </plurals>
+</resources>
