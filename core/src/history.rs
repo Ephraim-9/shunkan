@@ -4,7 +4,7 @@
 //! deduplicates entries by their BLAKE3 content hash. No SQLite dependency —
 //! this is designed to be lightweight per INV-01 (target ~15MB idle RAM).
 
-use crate::protocol::{ClipboardItem, ContentType, PeerId};
+use crate::protocol::{ClipboardItem, ContentType};
 use std::collections::{HashMap, VecDeque};
 
 /// In-memory LRU clipboard history store.
@@ -148,6 +148,7 @@ impl ClipboardHistory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::PeerId;
 
     fn make_text_item(text: &str) -> ClipboardItem {
         ClipboardItem::from_text(text, PeerId::new("test-peer"))

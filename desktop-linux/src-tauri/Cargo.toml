@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Shunkan P2P clipboard sync — Linux desktop daemon"
 
+[lib]
+name = "shunkan_desktop"
+path = "src/lib.rs"
+
 [[bin]]
 name = "shunkan-desktop"
 path = "src/main.rs"

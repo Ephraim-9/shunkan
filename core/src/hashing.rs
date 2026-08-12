@@ -186,7 +186,10 @@ mod tests {
     #[test]
     fn test_verify_chunk_invalid() {
         let data = b"chunk data here";
-        assert!(!verify_chunk(data, "0000000000000000000000000000000000000000000000000000000000000000"));
+        assert!(!verify_chunk(
+            data,
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        ));
     }
 
     #[test]
