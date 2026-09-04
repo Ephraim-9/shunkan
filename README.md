@@ -4,15 +4,16 @@
 No cloud, no account, no relay server — devices find each other on the local network and talk
 directly over QUIC.
 
-> **Status:** Rust core and Linux desktop client are implemented and tested. The Android client
-> is scaffolded (Gradle modules in place, UniFFI bindings not yet wired). Not yet packaged for
-> end users.
+> **Status:** Discovery, transport, protocol, history and hashing are implemented and covered by
+> 67 unit tests plus 8 integration tests. PIN-pairing verification works; the X25519 key exchange
+> is still a scaffold. The Android client is Gradle scaffolding only — no sources yet, UniFFI
+> bindings unwired. Not packaged for end users.
 
 ## Why
 
 Every cross-device clipboard tool either routes your clipboard through someone else's server or
 assumes you're inside one vendor's ecosystem. Shunkan does neither: discovery is mDNS, transport
-is QUIC with self-signed TLS pinned per pairing, and nothing leaves the local network.
+is QUIC with self-signed TLS, and nothing leaves the local network.
 
 ## Architecture
 
@@ -21,7 +22,7 @@ core/                  shunkan-core — shared Rust engine
   discovery.rs         mDNS-SD broadcast + browse (_shunkan-sync._udp.local.)
   transport.rs         QUIC transport (quinn) with self-signed rustls certificates
   protocol.rs          wire protocol message types
-  crypto.rs            X25519 key exchange + PIN verification
+  crypto.rs            BLAKE3 PIN-pairing verification (X25519 exchange scaffolded)
   history.rs           in-memory LRU clipboard history, BLAKE3-deduplicated
   hashing.rs           BLAKE3 chunk hasher for file integrity
 
@@ -64,7 +65,8 @@ cd desktop-linux && cargo tauri dev
 ## Roadmap
 
 - [ ] Wire UniFFI bindings and complete the Android client
-- [ ] Pairing UX (PIN exchange is implemented; no UI yet)
+- [ ] Replace the X25519 scaffold with a real key exchange
+- [ ] Pairing UX (PIN verification is implemented; no UI yet)
 - [ ] Chunked file transfer resume
 - [ ] Packaging: AppImage / Flatpak for Linux
 
