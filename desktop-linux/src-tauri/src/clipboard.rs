@@ -388,38 +388,153 @@ impl ClipboardMonitor {
         self.poll_interval
     }
 
-    /// Run the clipboard monitoring loop (blocking).
+    /// How this monitor will observe clipboard changes.
+    pub fn capture_mode(&self) -> CaptureMode {
+        CaptureMode::for_session(self.session_type)
+    }
+
+    /// Start watching the clipboard, returning a stream of change events.
+    ///
+    /// Capture runs on a **dedicated OS thread**, not on the async runtime.
+    /// `poll_for_changes` performs synchronous X11/Wayland round trips, so
+    /// running it inline in an `async fn` meant a slow or hung compositor
+    /// stalled the whole tokio worker — including QUIC.
+    ///
+    /// On X11 the thread blocks on XFixes selection notifications and does no
+    /// polling at all. Elsewhere it falls back to a timer; see [`CaptureMode`].
+    pub fn watch(self: &Arc<Self>) -> Result<tokio::sync::mpsc::UnboundedReceiver<String>> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let monitor = Arc::clone(self);
+        let mode = monitor.capture_mode();
+
+        std::thread::Builder::new()
+            .name("shunkan-clipboard-capture".to_string())
+            .spawn(move || {
+                info!("Clipboard capture thread started ({})", mode.label());
+                match mode {
+                    CaptureMode::XFixes => {
+                        if let Err(e) = monitor.capture_via_xfixes(&tx) {
+                            warn!(
+                                "XFixes capture unavailable ({:#}); falling back to polling",
+                                e
+                            );
+                            monitor.capture_via_polling(&tx);
+                        }
+                    }
+                    CaptureMode::Poll => monitor.capture_via_polling(&tx),
+                }
+                info!("Clipboard capture thread stopped");
+            })
+            .context("Failed to spawn the clipboard capture thread")?;
+
+        Ok(rx)
+    }
+
+    /// Run the clipboard monitoring loop.
     ///
     /// Calls the provided callback whenever new clipboard content is detected.
-    /// This is a stub implementation using arboard polling — future versions
-    /// will use native Wayland protocols for event-driven monitoring.
-    ///
-    /// Consecutive read failures back off exponentially rather than spinning at
-    /// the poll interval, and after [`FAILURES_BEFORE_RESET`] the display
-    /// connection is dropped and reopened — the only recovery from a compositor
-    /// that restarted underneath us.
-    pub async fn run_monitor_loop<F>(&self, on_change: F) -> Result<()>
+    /// Capture itself happens on a dedicated thread; this only awaits events.
+    pub async fn run_monitor_loop<F>(self: &Arc<Self>, on_change: F) -> Result<()>
     where
         F: Fn(String) + Send + 'static,
     {
         info!(
-            "Starting clipboard monitor loop ({}, interval={:?})",
+            "Starting clipboard monitor ({}, capture={})",
             self.session_type.label(),
-            self.poll_interval
+            self.capture_mode().label()
         );
 
-        let mut consecutive_failures: u32 = 0;
+        let mut events = self.watch()?;
+        while let Some(text) = events.recv().await {
+            info!("Clipboard change detected, broadcasting...");
+            on_change(text);
+        }
+
+        Ok(())
+    }
+
+    /// Event-driven capture on X11 via XFixes selection notifications.
+    ///
+    /// The X server tells us when the CLIPBOARD selection changes owner, so
+    /// there is no timer and no latency budget spent waiting for one. Errors
+    /// here mean XFixes is unavailable, and the caller falls back to polling.
+    fn capture_via_xfixes(&self, tx: &tokio::sync::mpsc::UnboundedSender<String>) -> Result<()> {
+        use x11rb::connection::Connection;
+        use x11rb::protocol::xfixes;
+        use x11rb::protocol::xproto::ConnectionExt as _;
+        use x11rb::protocol::Event;
+
+        let (conn, screen_num) =
+            x11rb::connect(None).context("Failed to connect to the X server")?;
+
+        // XFixes must be negotiated before any of its requests are accepted.
+        xfixes::query_version(&conn, 5, 0)
+            .context("XFixes query_version failed")?
+            .reply()
+            .context("The X server does not support XFixes")?;
+
+        let root = conn
+            .setup()
+            .roots
+            .get(screen_num)
+            .context("X server reported no screens")?
+            .root;
+        let clipboard = conn
+            .intern_atom(false, b"CLIPBOARD")
+            .context("Failed to request the CLIPBOARD atom")?
+            .reply()
+            .context("Failed to resolve the CLIPBOARD atom")?
+            .atom;
+
+        xfixes::select_selection_input(
+            &conn,
+            root,
+            clipboard,
+            xfixes::SelectionEventMask::SET_SELECTION_OWNER,
+        )
+        .context("Failed to subscribe to CLIPBOARD ownership changes")?;
+        conn.flush().context("Failed to flush the X connection")?;
+
+        info!("Watching the X11 CLIPBOARD selection via XFixes (no polling)");
+
+        // Pick up whatever is already on the clipboard before the first event.
+        self.emit_current(tx);
 
         loop {
+            let event = conn
+                .wait_for_event()
+                .context("The X connection ended while waiting for events")?;
+
+            if tx.is_closed() {
+                return Ok(());
+            }
+
+            if matches!(event, Event::XfixesSelectionNotify(_)) {
+                // A new owner has the selection; read what they published.
+                self.emit_current(tx);
+            }
+        }
+    }
+
+    /// Timer-based capture, for sessions with no event source we can use.
+    ///
+    /// GNOME's Mutter does not implement `wlr-data-control`, so there is
+    /// nothing to subscribe to there. On wlroots compositors this should become
+    /// an `ext-data-control-v1` / `zwlr_data_control_manager_v1` subscription —
+    /// `wl-clipboard-rs` keeps its `data_control` module private, so that needs
+    /// a direct `wayland-client` implementation rather than a dependency bump.
+    fn capture_via_polling(&self, tx: &tokio::sync::mpsc::UnboundedSender<String>) {
+        let mut consecutive_failures: u32 = 0;
+
+        while !tx.is_closed() {
             match self.poll_for_changes() {
                 Ok(Some(text)) => {
                     consecutive_failures = 0;
-                    info!("Clipboard change detected, broadcasting...");
-                    on_change(text);
+                    if tx.send(text).is_err() {
+                        return;
+                    }
                 }
-                Ok(None) => {
-                    consecutive_failures = 0;
-                }
+                Ok(None) => consecutive_failures = 0,
                 Err(e) => {
                     consecutive_failures = consecutive_failures.saturating_add(1);
                     warn!(
@@ -433,12 +548,23 @@ impl ClipboardMonitor {
 
                     let backoff = self.backoff_for(consecutive_failures);
                     debug!("Backing off {:?} before the next clipboard poll", backoff);
-                    tokio::time::sleep(backoff).await;
+                    std::thread::sleep(backoff);
                     continue;
                 }
             }
 
-            tokio::time::sleep(self.poll_interval).await;
+            std::thread::sleep(self.poll_interval);
+        }
+    }
+
+    /// Read the clipboard now and publish it if it is new.
+    fn emit_current(&self, tx: &tokio::sync::mpsc::UnboundedSender<String>) {
+        match self.poll_for_changes() {
+            Ok(Some(text)) => {
+                let _ = tx.send(text);
+            }
+            Ok(None) => {}
+            Err(e) => warn!("Failed to read the clipboard after a change: {:#}", e),
         }
     }
 
@@ -451,6 +577,45 @@ impl ClipboardMonitor {
             .saturating_mul(1u32 << shift)
             .min(MAX_POLL_BACKOFF);
         scaled.max(self.poll_interval)
+    }
+}
+
+/// How clipboard changes are observed for a given session type.
+///
+/// A 500 ms poll spent most of the sub-50 ms latency budget before a packet was
+/// even sent. Where the display server can tell us, we listen instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureMode {
+    /// X11 XFixes selection notifications. Event-driven; no timer.
+    XFixes,
+    /// Timer-based polling, for sessions with no usable event source.
+    Poll,
+}
+
+impl CaptureMode {
+    /// Pick the capture mode for a session type.
+    pub fn for_session(session_type: SessionType) -> Self {
+        match session_type {
+            SessionType::X11 => CaptureMode::XFixes,
+            // wlroots compositors expose data-control, which would be
+            // event-driven too; GNOME does not expose it at all.
+            SessionType::WaylandWlroots | SessionType::WaylandGnome | SessionType::Unknown => {
+                CaptureMode::Poll
+            }
+        }
+    }
+
+    /// A human-readable label for logging.
+    pub fn label(&self) -> &'static str {
+        match self {
+            CaptureMode::XFixes => "X11 XFixes (event-driven)",
+            CaptureMode::Poll => "polling",
+        }
+    }
+
+    /// Whether this mode is event-driven rather than timed.
+    pub fn is_event_driven(&self) -> bool {
+        matches!(self, CaptureMode::XFixes)
     }
 }
 
@@ -565,6 +730,56 @@ mod tests {
             monitor.poll_for_changes().is_err(),
             "a broken clipboard connection must be distinguishable from an empty clipboard"
         );
+    }
+
+    #[test]
+    fn test_capture_mode_is_event_driven_on_x11() {
+        assert_eq!(
+            CaptureMode::for_session(SessionType::X11),
+            CaptureMode::XFixes
+        );
+        assert!(CaptureMode::for_session(SessionType::X11).is_event_driven());
+    }
+
+    #[test]
+    fn test_capture_mode_falls_back_to_polling_elsewhere() {
+        for session in [
+            SessionType::WaylandWlroots,
+            SessionType::WaylandGnome,
+            SessionType::Unknown,
+        ] {
+            let mode = CaptureMode::for_session(session);
+            assert_eq!(mode, CaptureMode::Poll, "unexpected mode for {:?}", session);
+            assert!(!mode.is_event_driven());
+        }
+    }
+
+    #[test]
+    fn test_capture_mode_labels_are_distinct() {
+        assert_ne!(
+            CaptureMode::XFixes.label(),
+            CaptureMode::Poll.label(),
+            "the log must distinguish the two modes"
+        );
+    }
+
+    /// Capture must run off the async runtime. This spawns the watcher inside a
+    /// tokio context and asserts the runtime stays responsive while the capture
+    /// thread does its blocking display-server work.
+    #[tokio::test]
+    async fn test_capture_does_not_block_the_async_runtime() {
+        let monitor = Arc::new(ClipboardMonitor::with_session_type(SessionType::Unknown));
+        let mut events = monitor.watch().expect("watch must spawn");
+
+        // If capture ran inline on this worker, this timeout could not fire.
+        let quiet = tokio::time::timeout(Duration::from_millis(150), events.recv()).await;
+        assert!(
+            quiet.is_err(),
+            "no clipboard events expected in a headless test"
+        );
+
+        // Dropping the receiver signals the capture thread to stop.
+        drop(events);
     }
 
     /// A failed write must not leave the feedback guard armed, or the user's

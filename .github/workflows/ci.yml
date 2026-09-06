@@ -43,6 +43,11 @@ jobs:
       - name: Run full workspace test suite
         run: cargo test --workspace --all-targets --verbose
 
+      # Asserts the project's stated numbers and prints what it measured, so
+      # the run log carries a record rather than just a green tick.
+      - name: Record budget measurements (INV-01, wire overhead)
+        run: cargo test -p shunkan-core --test budgets -- --nocapture
+
       - name: Build release binaries
         run: cargo build --release --workspace --verbose
 

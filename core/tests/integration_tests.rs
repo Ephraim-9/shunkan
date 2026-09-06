@@ -568,27 +568,27 @@ fn test_blake3_not_sha256() {
     assert_eq!(hash, expected);
 }
 
-/// Test merkle root for file transfer verification.
+/// Test the whole-file checksum used for transfer verification.
 #[test]
-fn test_merkle_root_verification() {
+fn test_file_checksum_verification() {
     let data = vec![0u8; 300];
     let chunks = hashing::chunk_and_hash_with_size(&data, 100);
 
     let chunk_hashes: Vec<String> = chunks.iter().map(|(_, h)| h.clone()).collect();
-    let root1 = hashing::compute_merkle_root(&chunk_hashes);
+    let sum1 = hashing::compute_file_checksum(&chunk_hashes);
 
-    // Same data should produce the same merkle root
+    // Same data should produce the same checksum
     let chunks2 = hashing::chunk_and_hash_with_size(&data, 100);
     let chunk_hashes2: Vec<String> = chunks2.iter().map(|(_, h)| h.clone()).collect();
-    let root2 = hashing::compute_merkle_root(&chunk_hashes2);
+    let sum2 = hashing::compute_file_checksum(&chunk_hashes2);
 
-    assert_eq!(root1, root2);
+    assert_eq!(sum1, sum2);
 
-    // Different data should produce a different root
+    // Different data should produce a different checksum
     let data3 = vec![1u8; 300];
     let chunks3 = hashing::chunk_and_hash_with_size(&data3, 100);
     let chunk_hashes3: Vec<String> = chunks3.iter().map(|(_, h)| h.clone()).collect();
-    let root3 = hashing::compute_merkle_root(&chunk_hashes3);
+    let sum3 = hashing::compute_file_checksum(&chunk_hashes3);
 
-    assert_ne!(root1, root3);
+    assert_ne!(sum1, sum3);
 }
