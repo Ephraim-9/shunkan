@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2021"
 description = "P2P clipboard sync and file sharing engine for Project Shunkan"
 
+# A cdylib is what `libshunkan_core.so` needs to exist at all; without a
+# crate-type this built as an rlib only, so the .so the Gradle config pointed at
+# could never have been produced (INV-04, F-34). staticlib keeps an iOS/desktop
+# static-link option open; rlib keeps the desktop crate linking as before.
+[lib]
+name = "shunkan_core"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
 [dependencies]
 quinn = "0.11"
 rustls = { version = "0.23", features = ["ring"] }
@@ -20,6 +28,8 @@ rand = "0.8"
 spake2 = "0.4"
 subtle = "2"
 postcard = { version = "1", features = ["use-std"] }
+uniffi = { version = "0.28", features = ["cli"] }
+thiserror = "2"
 
 [dev-dependencies]
 tokio-test = "0.4"

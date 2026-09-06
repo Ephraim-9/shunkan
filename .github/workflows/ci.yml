@@ -75,7 +75,7 @@ jobs:
         run: node desktop-linux/tests/run-dom-tests.mjs
 
   build-android:
-    name: Build (Android Core & APK Skeleton)
+    name: Build (Android native library & debug APK)
     runs-on: ubuntu-latest
 
     steps:
@@ -93,10 +93,48 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          local-cache: true
+
+      - name: Cache Cargo registry & build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
 
-      - name: Check compilation of core library for Android targets
+      # This is the step the job was missing. It previously installed cargo-ndk
+      # and never invoked it, never touched Gradle, and ran only `cargo check` —
+      # which does not link, so it could not surface the NDK linker and ABI
+      # problems that actually break Android builds.
+      - name: Build libshunkan_core.so and generate Kotlin bindings
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: ./scripts/build-android.sh release
+
+      - name: Verify the native library exists for every ABI
         run: |
-          cargo check --target aarch64-linux-android -p shunkan-core
-          cargo check --target x86_64-linux-android -p shunkan-core
+          set -euo pipefail
+          for abi in arm64-v8a x86_64; do
+            lib="mobile-android/app/src/main/jniLibs/$abi/libshunkan_core.so"
+            test -f "$lib" || { echo "missing $lib"; exit 1; }
+            echo "ok: $lib ($(stat -c%s "$lib") bytes)"
+          done
+          test -f mobile-android/app/src/main/java/uniffi/shunkan_core/shunkan_core.kt
+
+      - name: Build debug APK
+        working-directory: mobile-android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: shunkan-debug-apk
+          path: mobile-android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

@@ -436,7 +436,7 @@
                         <tr>
                             <td><code>REQ-CLIP-01</code></td>
                             <td>Bidirectional Text & Rich Text Sync</td>
-                            <td>Captures UTF-8 string changes, HTML text, and small inline bitmap images (< 5MB) from OS clipboard and broadcasts to paired devices in < 50ms.</td>
+                            <td>Captures UTF-8 string changes, HTML text, and small inline bitmap images (< 5MB) from OS clipboard and broadcasts to paired devices in < 50ms.<br><br><strong>Direction asymmetry (ADR-006):</strong> desktop &rarr; Android capture is automatic. Android &rarr; desktop capture is <strong>user-initiated</strong> &mdash; via the share sheet, or automatic only while Shunkan is the active IME. Android 10 removed background clipboard reads for every app that is not the focused app or the default keyboard, so this is a platform constraint turned into a deliberate privacy property, not an oversight. See <code>mobile-android/CAPTURE-DESIGN.md</code>.</td>
                             <td class="priority-p0">P0 (Critical)</td>
                             <td>Linux & Android</td>
                         </tr>
@@ -456,8 +456,8 @@
                         </tr>
                         <tr>
                             <td><code>REQ-CLIP-04</code></td>
-                            <td>Android Optional IME / Shizuku Privilege Grant</td>
-                            <td>Provide an optional lightweight Custom Keyboard (<code>InputMethodService</code>) for true automatic background clipboard capture on Android 10+ without root. For developer/enthusiast power users, support optional <strong>Shizuku</strong> (<code>adb shell appops set com.shunkan.sync READ_CLIPBOARD allow</code>) privilege elevation as a secondary toggle.</td>
+                            <td>Android Clipboard Capture: IME, Share Target, Tile</td>
+                            <td>The IME is <strong>the</strong> automatic-capture mechanism on Android, not an optional extra: Android 10+ permits clipboard reads only from the focused app or the default keyboard, and INV-03 prohibits both polling and <code>AccessibilityService</code>. Ship three components &mdash; <code>ShunkanIME</code> (<code>InputMethodService</code>) for automatic capture, a <code>ShareTarget</code> for explicit sends (the default path), and a <code>TileService</code> for the on/off toggle. Optional <strong>Shizuku</strong> (<code>adb shell appops set com.shunkan.sync READ_CLIPBOARD allow</code>) remains a power-user convenience that removes the need to switch keyboards. Full rationale and rejected alternatives: <code>mobile-android/CAPTURE-DESIGN.md</code>.</td>
                             <td class="priority-p1">P1 (High)</td>
                             <td>Android 10+ (API 29+)</td>
                         </tr>

@@ -591,12 +591,14 @@
             <div class="task-top">
                 <div class="task-title-wrap">
                     <input type="checkbox" class="task-checkbox" id="t9" onchange="saveState(this)">
-                    <label class="task-title" for="t9">TASK-303: Optional Power-User Custom Keyboard (`InputMethodService`)</label>
+                    <label class="task-title" for="t9">TASK-303: `ShunkanIME` — the Android clipboard capture surface (`InputMethodService`)</label>
                 </div>
                 <span class="task-status status-todo">To Do</span>
             </div>
             <div class="task-desc">
-                Implement lightweight <code>ShunkanIME</code> extending <code>InputMethodService</code>. Register <code>ClipboardManager.OnPrimaryClipChangedListener</code> inside the IME context to enable true, seamless background clipboard auto-capture on Android 10+ devices without root.<br><br>
+                <strong>Not optional, and not a power-user extra.</strong> Android 10 (API 29) removed background clipboard reads: only the default IME or the focused app may read the clipboard. INV-03 rules out polling and prohibits <code>AccessibilityService</code>, so the IME is the only sanctioned capture mechanism on our minimum supported release. See <code>mobile-android/CAPTURE-DESIGN.md</code> (ADR-006).<br><br>
+                The consequence for the product: <strong>Android → desktop clipboard sync is user-initiated by design</strong>, via the share target, unless the user has enabled Shunkan as their keyboard. Desktop → Android stays automatic.<br><br>
+                Implement lightweight <code>ShunkanIME</code> extending <code>InputMethodService</code>. Register <code>ClipboardManager.OnPrimaryClipChangedListener</code> inside the IME context — event-driven, satisfying INV-03 — to enable seamless clipboard capture on Android 10+ devices without root. The listener is wired; the keyboard input view is still to build.<br><br>
                 <strong>Shizuku Power-User Toggle:</strong> Also implement an optional Shizuku privilege elevation path: detect if Shizuku is running and, if authorized, request <code>appops set com.shunkan.sync READ_CLIPBOARD allow</code> to enable standard background <code>OnPrimaryClipChangedListener</code> without requiring the user to switch keyboard.<br><br>
                 <em>Note: Do NOT use <code>AccessibilityService</code> for clipboard capture — violates Play Store policies and is silently blocked by Android 10+.</em>
             </div>
