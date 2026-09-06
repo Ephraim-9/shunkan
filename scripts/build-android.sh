@@ -37,6 +37,12 @@ if ! command -v cargo-ndk >/dev/null 2>&1; then
 fi
 
 if [[ -z "${ANDROID_NDK_HOME:-}${ANDROID_NDK_ROOT:-}" ]]; then
+    if [[ -n "${ANDROID_HOME:-}" && -d "$ANDROID_HOME/ndk" ]]; then
+        export ANDROID_NDK_HOME="$(find "$ANDROID_HOME/ndk" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)"
+    fi
+fi
+
+if [[ -z "${ANDROID_NDK_HOME:-}${ANDROID_NDK_ROOT:-}" ]]; then
     echo "error: set ANDROID_NDK_HOME (or ANDROID_NDK_ROOT) to your NDK install" >&2
     exit 1
 fi

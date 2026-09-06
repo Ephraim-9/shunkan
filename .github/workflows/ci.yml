@@ -101,7 +101,7 @@ jobs:
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26d
-          local-cache: true
+          local-cache: false
 
       - name: Cache Cargo registry & build artifacts
         uses: Swatinem/rust-cache@v2
