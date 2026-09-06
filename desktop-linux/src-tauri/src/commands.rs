@@ -105,12 +105,55 @@ impl From<&ClipboardItem> for HistoryEntry {
     }
 }
 
+/// Tauri command handlers.
+///
+/// Thin wrappers so the logic below stays callable — and testable — without a
+/// running Tauri app. The command *names* the frontend invokes come from these
+/// function names, so they must match the names in `app.js`.
+///
+/// Tauri v2 converts camelCase arguments from JavaScript to snake_case
+/// parameters here, so the frontend sends `{ peerId, text }`.
+pub mod ipc {
+    use super::*;
+    use std::sync::Arc;
+    use tauri::State;
+
+    /// IPC: `invoke("get_peers")` → `PeerView[]`
+    #[tauri::command]
+    pub fn get_peers(state: State<'_, Arc<AppState>>) -> Vec<PeerView> {
+        super::get_peers(&state)
+    }
+
+    /// IPC: `invoke("get_history", { limit })` → `HistoryEntry[]`
+    #[tauri::command]
+    pub fn get_history(state: State<'_, Arc<AppState>>, limit: Option<usize>) -> Vec<HistoryEntry> {
+        super::get_history(&state, limit)
+    }
+
+    /// IPC: `invoke("send_to_peer", { peerId, text })` → `bool`
+    #[tauri::command]
+    pub fn send_to_peer(state: State<'_, Arc<AppState>>, peer_id: String, text: String) -> bool {
+        super::send_to_peer(&state, &peer_id, text)
+    }
+
+    /// IPC: `invoke("paste_entry", { hash })` → `bool`
+    #[tauri::command]
+    pub fn paste_entry(state: State<'_, Arc<AppState>>, hash: String) -> bool {
+        super::paste_entry(&state, &hash)
+    }
+
+    /// IPC: `invoke("get_status")` → `StatusInfo`
+    #[tauri::command]
+    pub fn get_status(state: State<'_, Arc<AppState>>) -> StatusInfo {
+        super::get_status(&state)
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // IPC Commands
 //
-// Each is backed by the daemon's shared `AppState`. When Tauri is integrated,
-// annotate each with `#[tauri::command]` and take `State<'_, Arc<AppState>>`
-// instead of an explicit parameter.
+// Each is backed by the daemon's shared `AppState`. The `ipc` module above wraps
+// these for Tauri; these plain functions are what the tests drive.
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Get the list of connected peers on the local network.

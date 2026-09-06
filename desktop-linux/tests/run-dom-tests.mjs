@@ -88,7 +88,10 @@ if (!match) {
 }
 
 if (match[1] === 'PASS') {
-    console.log('PASS: palette renders hostile peer and history strings as inert text');
+    console.log(
+        'PASS: hostile strings stay inert, search survives refresh, ' +
+        'Enter/click/Escape behave',
+    );
     process.exit(0);
 }
 

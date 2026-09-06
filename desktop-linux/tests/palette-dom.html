@@ -115,11 +115,137 @@
       check('no img in empty state', historyList.querySelector('img') === null);
       check('still not pwned', window.pwned === false);
 
+      runInteractionTests();
+
       const verdict = failures.length === 0
         ? 'RESULT:PASS'
         : `RESULT:FAIL ${failures.join(' | ')}`;
       document.getElementById('result').textContent = verdict;
       document.title = verdict;
+    }
+
+    // ── Palette interaction (F-27, F-28, F-29) ────────────────────────────────
+
+    function sampleHistory() {
+      const now = Math.floor(Date.now() / 1000);
+      return [
+        { hash: 'h1', content_type: 'text', preview: 'alpha one', full_text: 'alpha one', timestamp: now, source: 'ThinkPad' },
+        { hash: 'h2', content_type: 'text', preview: 'beta two', full_text: 'beta two', timestamp: now, source: 'Pixel' },
+        { hash: 'h3', content_type: 'text', preview: 'alpha three', full_text: 'alpha three', timestamp: now, source: 'ThinkPad' },
+      ];
+    }
+
+    function runInteractionTests() {
+      const searchInput = document.getElementById('search-input');
+      const historyList = document.getElementById('history-list');
+
+      // Record what the backend was asked to do, so we can assert on it.
+      const calls = [];
+      window.invoke = async (command, args) => {
+        calls.push({ command, args });
+        if (command === 'get_history') return sampleHistory();
+        if (command === 'get_peers') return [];
+        if (command === 'get_status') return null;
+        if (command === 'paste_entry') return true;
+        return null;
+      };
+      // Neutralize the real window-hide path.
+      window.hidePalette = async () => {};
+
+      // ── F-27: a background refresh must not erase an active search ──────────
+      state.history = sampleHistory();
+      state.searchQuery = 'alpha';
+      state.filteredHistory = [];
+      state.selectedIndex = 0;
+      filterHistory();
+
+      check('search filters the list', state.filteredHistory.length === 2,
+        `got ${state.filteredHistory.length}`);
+
+      // Select the second match, then simulate the refresh that used to clobber it.
+      state.selectedIndex = 1;
+      applyFilter();
+
+      check('refresh preserves the search', state.filteredHistory.length === 2,
+        `got ${state.filteredHistory.length} after refresh`);
+      check('refresh preserves the selection by hash',
+        state.filteredHistory[state.selectedIndex]?.hash === 'h3',
+        state.filteredHistory[state.selectedIndex]?.hash);
+
+      // A new entry arriving at the front must not shift the selection.
+      state.history = [
+        { hash: 'h0', content_type: 'text', preview: 'alpha zero', full_text: 'alpha zero', timestamp: 0, source: 'New' },
+        ...sampleHistory(),
+      ];
+      applyFilter();
+      check('selection survives an insertion at the front',
+        state.filteredHistory[state.selectedIndex]?.hash === 'h3',
+        state.filteredHistory[state.selectedIndex]?.hash);
+
+      // ── F-28: Enter in the search box must not paste ────────────────────────
+      state.history = sampleHistory();
+      state.searchQuery = '';
+      filterHistory();
+
+      calls.length = 0;
+      searchInput.focus();
+      searchInput.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', bubbles: true, cancelable: true,
+      }));
+      check('Enter in the search box does not paste',
+        !calls.some(c => c.command === 'paste_entry'),
+        JSON.stringify(calls.map(c => c.command)));
+
+      // Enter outside the search box does paste.
+      calls.length = 0;
+      historyList.focus();
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', bubbles: true, cancelable: true,
+      }));
+      check('Enter outside the search box pastes',
+        calls.some(c => c.command === 'paste_entry'));
+
+      // Arrow keys still drive the list while typing.
+      state.selectedIndex = 0;
+      searchInput.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'ArrowDown', bubbles: true, cancelable: true,
+      }));
+      check('arrows navigate while typing', state.selectedIndex === 1,
+        String(state.selectedIndex));
+
+      // ── F-29: single click selects, double click pastes ─────────────────────
+      state.selectedIndex = 0;
+      renderHistory();
+      calls.length = 0;
+
+      const secondRow = historyList.querySelectorAll('.history-item')[1];
+      check('rows rendered for click tests', !!secondRow);
+      if (secondRow) {
+        secondRow.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+        check('single click selects', state.selectedIndex === 1, String(state.selectedIndex));
+        check('single click does not paste',
+          !calls.some(c => c.command === 'paste_entry'),
+          JSON.stringify(calls.map(c => c.command)));
+
+        const refreshed = historyList.querySelectorAll('.history-item')[1];
+        refreshed.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
+        check('double click pastes', calls.some(c => c.command === 'paste_entry'));
+      }
+
+      // ── F-29: Escape closes rather than logging ─────────────────────────────
+      let closed = false;
+      window.hidePalette = async () => { closed = true; };
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', bubbles: true, cancelable: true,
+      }));
+      check('Escape closes the palette', closed);
+
+      // Escape works from inside the search box too.
+      closed = false;
+      searchInput.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', bubbles: true, cancelable: true,
+      }));
+      check('Escape closes from the search box', closed);
     }
 
     window.addEventListener('load', () => {

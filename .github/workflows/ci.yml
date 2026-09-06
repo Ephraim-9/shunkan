@@ -24,12 +24,16 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Install system dependencies (Wayland, X11, OpenSSL)
+      # Tauri v2 on Linux needs webkit2gtk 4.1 and GTK 3; the rest is for
+      # arboard, x11rb and the QUIC stack.
+      - name: Install system dependencies (Tauri, Wayland, X11, OpenSSL)
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential pkg-config libx11-dev libxcb1-dev \
-            libxkbcommon-dev libwayland-dev libssl-dev cmake
+            libxkbcommon-dev libwayland-dev libssl-dev cmake \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev
 
       - name: Cache Cargo registry & build artifacts
         uses: Swatinem/rust-cache@v2

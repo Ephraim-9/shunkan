@@ -49,6 +49,7 @@ use shunkan_core::transport::{TransportClient, TransportConfig, TransportServer}
 use shunkan_core::trust::TrustStore;
 use state::AppState;
 use std::sync::Arc;
+use tauri::{Emitter, Manager};
 
 /// Environment variable that opens a pairing window with a generated PIN.
 pub const PAIRING_ENV: &str = "SHUNKAN_PAIRING";
@@ -89,10 +90,23 @@ pub fn init_logging() {
         .init();
 }
 
-/// Run the daemon until Ctrl+C or a fatal service error.
-pub async fn run() -> Result<()> {
+/// Handles for the daemon's long-running service tasks.
+pub struct Services {
+    /// mDNS discovery and outbound dialling.
+    pub discovery: tokio::task::JoinHandle<Result<()>>,
+    /// The QUIC accept loop.
+    pub listener: tokio::task::JoinHandle<Result<()>>,
+    /// The clipboard capture loop.
+    pub clipboard: tokio::task::JoinHandle<Result<()>>,
+}
+
+/// Build the daemon's state and start its service tasks.
+///
+/// Shared by the headless daemon and the Tauri app, so both run exactly the
+/// same engine.
+pub async fn start_services() -> Result<(Arc<AppState>, Services)> {
     info!("╔══════════════════════════════════════════════╗");
-    info!("║  Shunkan P2P Engine — Desktop Linux Daemon   ║");
+    info!("║  Shunkan P2P Engine — Desktop Linux          ║");
     info!(
         "║  瞬間 (Shunkan) v{}                    ║",
         env!("CARGO_PKG_VERSION")
@@ -169,20 +183,99 @@ pub async fn run() -> Result<()> {
     ));
     let clipboard_handle = tokio::spawn(run_clipboard_monitor(app_state.clone(), clipboard));
 
-    info!("All services started. Press Ctrl+C to stop.");
+    info!("All services started.");
 
-    // Wait for Ctrl+C or any task to finish.
+    Ok((
+        app_state,
+        Services {
+            discovery: mdns_handle,
+            listener: listener_handle,
+            clipboard: clipboard_handle,
+        },
+    ))
+}
+
+/// Run the headless daemon until Ctrl+C or a fatal service error.
+pub async fn run() -> Result<()> {
+    let (_state, services) = start_services().await?;
+    info!("Running headless. Press Ctrl+C to stop.");
+
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             info!("Received Ctrl+C, shutting down...");
         }
-        result = mdns_handle => report("mDNS discovery", result),
-        result = listener_handle => report("QUIC listener", result),
-        result = clipboard_handle => report("Clipboard monitor", result),
+        result = services.discovery => report("mDNS discovery", result),
+        result = services.listener => report("QUIC listener", result),
+        result = services.clipboard => report("Clipboard monitor", result),
     }
 
     info!("Shunkan daemon stopped.");
     Ok(())
+}
+
+/// Run the Tauri desktop application.
+///
+/// The engine is the same one [`run`] drives; this adds the command palette
+/// window and the registered IPC handlers on top of it.
+///
+/// Services are started synchronously in `setup` and the state is managed
+/// before any window exists, so a command can never observe missing state.
+pub fn run_app() -> Result<()> {
+    // GTK aborts the process rather than returning an error when there is no
+    // display, which is an unhelpful way to learn you wanted --headless.
+    anyhow::ensure!(
+        std::env::var_os("DISPLAY").is_some() || std::env::var_os("WAYLAND_DISPLAY").is_some(),
+        "No display server found (neither DISPLAY nor WAYLAND_DISPLAY is set). \
+         Run with --headless to start the sync engine without a window."
+    );
+
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            commands::ipc::get_peers,
+            commands::ipc::get_history,
+            commands::ipc::send_to_peer,
+            commands::ipc::paste_entry,
+            commands::ipc::get_status,
+        ])
+        .setup(|app| {
+            let (state, _services) = tauri::async_runtime::block_on(start_services())?;
+            forward_ui_events(app.handle().clone(), state.clone());
+            app.manage(state);
+
+            // The palette starts hidden and is summoned; showing it here would
+            // put a window on screen at login.
+            if let Some(window) = app.get_webview_window("palette") {
+                let _ = window.hide();
+            }
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .context("The Tauri application exited with an error")
+}
+
+/// Forward [`state::UiEvent`]s to the webview as Tauri events.
+///
+/// This is what lets the palette stop polling: it re-reads a list when told to,
+/// rather than every two seconds regardless.
+fn forward_ui_events(app: tauri::AppHandle, state: Arc<AppState>) {
+    let mut events = state.subscribe_ui();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match events.recv().await {
+                Ok(event) => {
+                    if let Err(e) = app.emit(event.name(), ()) {
+                        warn!("Failed to emit {} to the webview: {}", event.name(), e);
+                    }
+                }
+                // Lagged just means we coalesced; every event says "re-read",
+                // so the next one still brings the UI up to date.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    log::debug!("UI event listener lagged {} notifications", n);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    });
 }
 
 /// Log how a service task ended.
