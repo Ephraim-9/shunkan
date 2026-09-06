@@ -28,8 +28,92 @@ use anyhow::{Context, Result};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-/// Maximum accepted size of a single framed message (16 MiB).
-pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
+/// Maximum accepted size of a frame on the control channel.
+///
+/// Clipboard text and small images travel here; anything larger belongs in a
+/// file transfer. Deliberately far below the old blanket 16 MiB: the length
+/// prefix comes off the wire from a peer we have not finished authenticating,
+/// and it used to become a `vec![0u8; len]` directly.
+pub const MAX_CONTROL_FRAME_SIZE: usize = 4 * 1024 * 1024;
+
+/// Maximum accepted size of a frame on a file transfer stream.
+///
+/// A [`crate::DEFAULT_CHUNK_SIZE`] chunk is 64 KiB, which the JSON envelope
+/// inflates to roughly 235 KiB. 1 MiB leaves headroom without letting a peer
+/// name an arbitrary number.
+pub const MAX_FILE_FRAME_SIZE: usize = 1024 * 1024;
+
+/// Largest frame any stream will accept, whatever its role.
+pub const MAX_MESSAGE_SIZE: usize = MAX_CONTROL_FRAME_SIZE;
+
+/// Concurrent unidirectional streams a peer may open (one per file transfer).
+///
+/// Streams were unbounded, so a peer could open them in a loop and multiply the
+/// per-stream allocation ceiling without limit — against a daemon whose stated
+/// hard ceiling is 20 MB total (INV-01).
+pub const MAX_CONCURRENT_UNI_STREAMS: u32 = 16;
+
+/// Concurrent bidirectional streams a peer may open. One control channel is
+/// all a well-behaved peer needs; the rest is slack for reconnection.
+pub const MAX_CONCURRENT_BIDI_STREAMS: u32 = 4;
+
+/// Build the quinn transport parameters shared by both endpoints.
+fn quinn_transport_config() -> Arc<quinn::TransportConfig> {
+    let mut config = quinn::TransportConfig::default();
+    config.max_concurrent_uni_streams(MAX_CONCURRENT_UNI_STREAMS.into());
+    config.max_concurrent_bidi_streams(MAX_CONCURRENT_BIDI_STREAMS.into());
+    Arc::new(config)
+}
+
+/// Reads length-prefixed frames into a reusable buffer with a hard ceiling.
+///
+/// Two properties matter here. The declared length is checked against `limit`
+/// *before* any memory is reserved, and the buffer is reused across frames
+/// rather than allocated fresh from a number the peer chose.
+pub struct FrameReader {
+    buf: Vec<u8>,
+    limit: usize,
+}
+
+impl FrameReader {
+    /// Create a reader that refuses frames larger than `limit` bytes.
+    pub fn new(limit: usize) -> Self {
+        Self {
+            buf: Vec::new(),
+            limit,
+        }
+    }
+
+    /// The frame size ceiling this reader enforces.
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
+
+    /// Read the next frame from `recv`.
+    pub async fn read(&mut self, recv: &mut quinn::RecvStream) -> Result<Message> {
+        let mut len_buf = [0u8; 4];
+        recv.read_exact(&mut len_buf)
+            .await
+            .context("Failed to read frame length")?;
+        let len = u32::from_be_bytes(len_buf) as usize;
+
+        anyhow::ensure!(
+            len <= self.limit,
+            "Frame too large: {} bytes (max {})",
+            len,
+            self.limit
+        );
+
+        // Only now, with `len` known to be within the ceiling, is memory touched.
+        self.buf.clear();
+        self.buf.resize(len, 0);
+        recv.read_exact(&mut self.buf)
+            .await
+            .context("Failed to read frame body")?;
+
+        Message::from_bytes(&self.buf)
+    }
+}
 
 /// Configuration for the QUIC transport layer.
 #[derive(Debug, Clone)]
@@ -61,8 +145,9 @@ impl TransportServer {
     /// Presents `identity`'s persisted certificate, so a peer that paired with
     /// this device in an earlier run still recognizes it.
     pub async fn start(config: TransportConfig, identity: &DeviceIdentity) -> Result<Self> {
-        let server_config = crypto::quinn_server_config(identity)
+        let mut server_config = crypto::quinn_server_config(identity)
             .context("Failed to build QUIC server config from device identity")?;
+        server_config.transport_config(quinn_transport_config());
 
         let endpoint = quinn::Endpoint::server(server_config, config.bind_addr)
             .context("Failed to bind QUIC endpoint")?;
@@ -125,8 +210,9 @@ impl TransportClient {
 
     /// Create a transport client bound to a specific local address.
     pub fn bind(bind_addr: SocketAddr, trust: Arc<TrustStore>) -> Result<Self> {
-        let client_config =
+        let mut client_config =
             crypto::quinn_client_config(trust).context("Failed to build QUIC client config")?;
+        client_config.transport_config(quinn_transport_config());
 
         let mut endpoint =
             quinn::Endpoint::client(bind_addr).context("Failed to create client endpoint")?;
@@ -249,6 +335,7 @@ impl ControlChannel {
             sender: ControlSender { send, next_seq: 0 },
             receiver: ControlReceiver {
                 recv,
+                frames: FrameReader::new(MAX_CONTROL_FRAME_SIZE),
                 last_clipboard_seq: None,
                 peer_label: None,
             },
@@ -291,12 +378,9 @@ pub struct ControlSender {
 impl ControlSender {
     /// Send a message on the control channel.
     pub async fn send(&mut self, msg: &Message) -> Result<()> {
-        let framed = msg.to_framed_bytes()?;
-        self.send
-            .write_all(&framed)
+        send_framed_within(&mut self.send, msg, MAX_CONTROL_FRAME_SIZE)
             .await
-            .context("Failed to write message to control stream")?;
-        Ok(())
+            .context("Failed to write message to control stream")
     }
 
     /// Send a clipboard item, assigning it the next sequence number.
@@ -322,6 +406,7 @@ impl ControlSender {
 /// The receiving half of a [`ControlChannel`].
 pub struct ControlReceiver {
     recv: quinn::RecvStream,
+    frames: FrameReader,
     last_clipboard_seq: Option<u64>,
     peer_label: Option<String>,
 }
@@ -334,7 +419,7 @@ impl ControlReceiver {
     /// item can never overwrite a newer one.
     pub async fn recv(&mut self) -> Result<Message> {
         loop {
-            let msg = recv_framed(&mut self.recv).await?;
+            let msg = self.frames.read(&mut self.recv).await?;
 
             if let Message::Clipboard { seq, .. } = &msg {
                 if let Some(last) = self.last_clipboard_seq {
@@ -370,36 +455,39 @@ impl ControlReceiver {
     }
 }
 
-/// Send a framed message over a QUIC send stream.
+/// Send a framed message over a QUIC send stream, refusing oversized frames.
+///
+/// Checked on the way out too, so an over-large message fails here with a clear
+/// error instead of being silently dropped by the peer's ceiling.
 pub async fn send_framed(send: &mut quinn::SendStream, msg: &Message) -> Result<()> {
+    send_framed_within(send, msg, MAX_FILE_FRAME_SIZE).await
+}
+
+/// Send a framed message, enforcing an explicit size ceiling.
+pub async fn send_framed_within(
+    send: &mut quinn::SendStream,
+    msg: &Message,
+    limit: usize,
+) -> Result<()> {
     let framed = msg.to_framed_bytes()?;
+    anyhow::ensure!(
+        framed.len() - 4 <= limit,
+        "Refusing to send a {} byte frame (max {})",
+        framed.len() - 4,
+        limit
+    );
     send.write_all(&framed)
         .await
         .context("Failed to write framed message")?;
     Ok(())
 }
 
-/// Receive a framed message from a QUIC receive stream.
+/// Receive a framed message from a file transfer stream.
+///
+/// Prefer [`FrameReader`] when reading more than one frame from the same
+/// stream — it reuses its buffer instead of allocating per frame.
 pub async fn recv_framed(recv: &mut quinn::RecvStream) -> Result<Message> {
-    let mut len_buf = [0u8; 4];
-    recv.read_exact(&mut len_buf)
-        .await
-        .context("Failed to read frame length")?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-
-    anyhow::ensure!(
-        len <= MAX_MESSAGE_SIZE,
-        "Frame too large: {} bytes (max {})",
-        len,
-        MAX_MESSAGE_SIZE
-    );
-
-    let mut buf = vec![0u8; len];
-    recv.read_exact(&mut buf)
-        .await
-        .context("Failed to read frame body")?;
-
-    Message::from_bytes(&buf)
+    FrameReader::new(MAX_FILE_FRAME_SIZE).read(recv).await
 }
 
 #[cfg(test)]
@@ -750,5 +838,108 @@ mod tests {
 
         conn.close();
         client.shutdown();
+    }
+
+    // The audit's point: 16 MiB per stream, times unbounded streams, against a
+    // 20 MB total ceiling (INV-01). Enforced at compile time so the ceilings
+    // cannot drift back up unnoticed.
+    const _: () = {
+        assert!(MAX_CONTROL_FRAME_SIZE < 16 * 1024 * 1024);
+        assert!(MAX_FILE_FRAME_SIZE < MAX_CONTROL_FRAME_SIZE);
+        // A default chunk plus JSON expansion (~3.6x) must still fit.
+        assert!(crate::DEFAULT_CHUNK_SIZE * 4 < MAX_FILE_FRAME_SIZE);
+        // Concurrent streams times the per-stream ceiling must stay bounded
+        // well under the daemon's memory budget.
+        assert!(MAX_CONCURRENT_UNI_STREAMS as usize * MAX_FILE_FRAME_SIZE <= 16 * 1024 * 1024);
+    };
+
+    #[test]
+    fn test_frame_reader_reports_its_limit() {
+        let reader = FrameReader::new(1234);
+        assert_eq!(reader.limit(), 1234);
+        assert!(reader.buf.is_empty(), "no memory reserved before any read");
+    }
+
+    /// Frames larger than the ceiling are refused by the sender too, so the
+    /// failure is a clear local error rather than a silent drop at the peer.
+    #[tokio::test]
+    async fn test_sender_refuses_oversized_frame() {
+        let (identity, trust, server, addr) = paired_server().await;
+
+        let server_task = tokio::spawn(async move {
+            let conn = server.accept().await.unwrap().expect("no incoming");
+            let mut control = conn.accept_control().await.unwrap();
+            let _ = control.recv().await;
+            server.shutdown();
+        });
+
+        let client = TransportClient::new(trust).unwrap();
+        let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
+        let mut stream = conn.open_file_stream().await.unwrap();
+
+        let huge = crate::protocol::FileChunk::new(
+            "tx-1",
+            "huge.bin",
+            MAX_FILE_FRAME_SIZE as u64 * 2,
+            0,
+            1,
+            vec![0u8; MAX_FILE_FRAME_SIZE],
+        );
+        let err = send_framed(&mut stream, &Message::FileChunk(huge))
+            .await
+            .expect_err("oversized frame must be refused");
+        assert!(
+            err.to_string().contains("Refusing to send"),
+            "unexpected error: {}",
+            err
+        );
+
+        conn.close();
+        client.shutdown();
+        server_task.abort();
+    }
+
+    /// A peer cannot open unbounded streams to multiply the per-stream ceiling.
+    #[tokio::test]
+    async fn test_concurrent_uni_streams_are_capped() {
+        let (identity, trust, server, addr) = paired_server().await;
+
+        let server_task = tokio::spawn(async move {
+            let conn = server.accept().await.unwrap().expect("no incoming");
+            // Accept the connection but never its streams, so none of the
+            // peer's opens retire and the cap is what stops it.
+            tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+            conn.close();
+            server.shutdown();
+        });
+
+        let client = TransportClient::new(trust).unwrap();
+        let conn = client.connect(addr, &identity.dns_name()).await.unwrap();
+
+        let mut opened = 0usize;
+        for _ in 0..(MAX_CONCURRENT_UNI_STREAMS as usize + 8) {
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(80),
+                conn.open_file_stream(),
+            )
+            .await
+            {
+                Ok(Ok(_stream)) => opened += 1,
+                // Either the peer's flow control blocks us (timeout) or the
+                // connection refuses — both mean the cap is doing its job.
+                _ => break,
+            }
+        }
+
+        assert!(
+            opened <= MAX_CONCURRENT_UNI_STREAMS as usize,
+            "opened {} streams, cap is {}",
+            opened,
+            MAX_CONCURRENT_UNI_STREAMS
+        );
+
+        conn.close();
+        client.shutdown();
+        let _ = server_task.await;
     }
 }

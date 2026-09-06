@@ -46,6 +46,25 @@ jobs:
       - name: Build release binaries
         run: cargo build --release --workspace --verbose
 
+  frontend-dom:
+    name: Palette DOM safety
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Renders hostile peer names and content hashes in a real browser and
+      # asserts they stay inert text. A DOM stub cannot test this: the
+      # behaviour under test is how the HTML parser treats attribute values.
+      - name: Run palette DOM safety tests
+        run: node desktop-linux/tests/run-dom-tests.mjs
+
   build-android:
     name: Build (Android Core & APK Skeleton)
     runs-on: ubuntu-latest
