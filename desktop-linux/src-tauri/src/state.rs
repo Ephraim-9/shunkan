@@ -6,8 +6,10 @@
 //! IPC commands returned empty vectors because there was no state to read.
 
 use crate::clipboard::{ClipboardMonitor, SessionType};
+use shunkan_core::crypto::PairingPin;
 use shunkan_core::history::ClipboardHistory;
 use shunkan_core::identity::DeviceIdentity;
+use shunkan_core::pairing::AttemptLimiter;
 use shunkan_core::protocol::{ClipboardItem, Message, PeerId, PeerInfo};
 use shunkan_core::trust::TrustStore;
 use std::collections::HashMap;
@@ -74,6 +76,10 @@ pub struct AppState {
     pub session_type: SessionType,
     /// The port the QUIC listener is bound to.
     pub listening_port: u16,
+    /// Rate limiter for PIN pairing attempts.
+    pub pairing_attempts: AttemptLimiter,
+    /// The PIN this device will pair with, when pairing mode is on.
+    pairing_pin: Mutex<Option<PairingPin>>,
     /// Clipboard history, shared with the IPC commands.
     history: Mutex<ClipboardHistory>,
     /// Currently connected peers, keyed by peer ID.
@@ -101,12 +107,29 @@ impl AppState {
             history: Mutex::new(ClipboardHistory::with_default_capacity()),
             peers: Mutex::new(HashMap::new()),
             clipboard,
+            pairing_attempts: AttemptLimiter::new(),
+            pairing_pin: Mutex::new(None),
         }
     }
 
     /// This device's peer ID.
     pub fn peer_id(&self) -> &PeerId {
         &self.peer_info.id
+    }
+
+    /// Arm pairing with the given PIN, or disarm it with `None`.
+    pub fn set_pairing_pin(&self, pin: Option<PairingPin>) {
+        let armed = pin.is_some();
+        *self.pairing_pin.lock().unwrap_or_else(|e| e.into_inner()) = pin;
+        self.trust.set_pairing_mode(armed);
+    }
+
+    /// The PIN currently armed for pairing, if any.
+    pub fn pairing_pin(&self) -> Option<PairingPin> {
+        self.pairing_pin
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// The clipboard adapter.

@@ -17,9 +17,21 @@
 //!
 //! ## Pairing
 //!
-//! A device only accepts peers whose certificate fingerprint it has pinned.
-//! Start the daemon with `SHUNKAN_PAIRING=1` on both devices to pin each other
-//! on first contact, then restart without it.
+//! A device only talks to peers whose certificate fingerprint it has pinned
+//! *and* PIN-confirmed. Mutual TLS enforces the pin in both directions; the PIN
+//! is confirmed by a SPAKE2 exchange bound to both certificate fingerprints.
+//!
+//! To pair two devices:
+//!
+//! ```text
+//! # on the first device — prints a PIN
+//! SHUNKAN_PAIRING=1 shunkan-desktop
+//!
+//! # on the second device — enter the PIN it printed
+//! SHUNKAN_PAIRING_PIN=314159 shunkan-desktop
+//! ```
+//!
+//! After that both restart without either variable and reconnect silently.
 
 pub mod clipboard;
 pub mod commands;
@@ -29,6 +41,7 @@ pub mod state;
 use anyhow::{Context, Result};
 use clipboard::{ClipboardMonitor, SessionType};
 use log::{error, info, warn};
+use shunkan_core::crypto::PairingPin;
 use shunkan_core::discovery::{DiscoveryEvent, DiscoveryService, ServiceAdvertisement};
 use shunkan_core::identity::{self, DeviceIdentity};
 use shunkan_core::protocol::{ClipboardItem, PeerInfo};
@@ -37,8 +50,37 @@ use shunkan_core::trust::TrustStore;
 use state::AppState;
 use std::sync::Arc;
 
-/// Environment variable that enables trust-on-first-use pairing.
+/// Environment variable that opens a pairing window with a generated PIN.
 pub const PAIRING_ENV: &str = "SHUNKAN_PAIRING";
+
+/// Environment variable carrying the PIN shown by the other device.
+pub const PAIRING_PIN_ENV: &str = "SHUNKAN_PAIRING_PIN";
+
+/// Resolve the pairing PIN from the environment, generating one if the operator
+/// asked to pair without supplying it.
+///
+/// Returns `None` when pairing is not requested, which is the normal case: a
+/// device with confirmed pairings needs no PIN to reconnect to them.
+fn resolve_pairing_pin() -> Result<Option<PairingPin>> {
+    if let Ok(raw) = std::env::var(PAIRING_PIN_ENV) {
+        let pin = PairingPin::parse(raw.trim())
+            .with_context(|| format!("{} must be exactly 6 digits", PAIRING_PIN_ENV))?;
+        info!("Pairing armed with the PIN supplied in {}", PAIRING_PIN_ENV);
+        return Ok(Some(pin));
+    }
+
+    if std::env::var(PAIRING_ENV).is_ok_and(|v| v != "0") {
+        let pin = PairingPin::generate();
+        warn!("╔══════════════════════════════════════════════╗");
+        warn!("║  PAIRING PIN: {}                        ║", pin);
+        warn!("║  Start the other device with:                ║");
+        warn!("║    {}={}          ║", PAIRING_PIN_ENV, pin.as_str());
+        warn!("╚══════════════════════════════════════════════╝");
+        return Ok(Some(pin));
+    }
+
+    Ok(None)
+}
 
 /// Initialize logging — defaults to info level if `RUST_LOG` is not set.
 pub fn init_logging() {
@@ -68,12 +110,12 @@ pub async fn run() -> Result<()> {
         TrustStore::load_or_create(&data_dir).context("Failed to load the paired-device store")?,
     );
 
-    if std::env::var(PAIRING_ENV).is_ok_and(|v| v != "0") {
-        trust.set_pairing_mode(true);
-    } else if trust.is_empty() {
+    let pairing_pin = resolve_pairing_pin()?;
+    if pairing_pin.is_none() && trust.is_empty() {
         warn!(
-            "No paired devices yet. Start both devices with {}=1 to pair them.",
-            PAIRING_ENV
+            "No paired devices yet. Start one device with {}=1 to get a PIN, then \
+             the other with {}=<that PIN>.",
+            PAIRING_ENV, PAIRING_PIN_ENV
         );
     }
 
@@ -99,6 +141,7 @@ pub async fn run() -> Result<()> {
             ..TransportConfig::default()
         },
         &device_identity,
+        trust.clone(),
     )
     .await
     .context("Failed to start the QUIC listener")?;
@@ -114,6 +157,9 @@ pub async fn run() -> Result<()> {
         listening_port,
         clipboard.clone(),
     ));
+    // Arming the PIN is what turns pairing mode on, so the two can never be
+    // out of step — a pairing window without a PIN would be an open door.
+    app_state.set_pairing_pin(pairing_pin);
 
     let listener_handle = tokio::spawn(run_quic_listener(app_state.clone(), server));
     let mdns_handle = tokio::spawn(run_mdns_discovery(
@@ -169,7 +215,7 @@ async fn run_mdns_discovery(state: Arc<AppState>, hostname: String, port: u16) -
         .context("Failed to advertise over mDNS")?;
 
     let client = Arc::new(
-        TransportClient::new(state.trust.clone())
+        TransportClient::new(&state.identity, state.trust.clone())
             .context("Failed to create the QUIC client endpoint")?,
     );
 

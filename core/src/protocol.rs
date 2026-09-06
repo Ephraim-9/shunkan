@@ -57,26 +57,28 @@ impl PeerInfo {
 }
 
 /// Handshake message exchanged during QUIC connection establishment.
+///
+/// This carries identity only. It used to also carry a `pin_hash` — an
+/// unsalted BLAKE3 of a six-digit PIN, enumerable in milliseconds by anyone who
+/// saw one handshake, and read by no code anywhere. PIN authentication is a
+/// SPAKE2 exchange now; see [`crate::pairing`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Handshake {
     /// The sender's peer information.
     pub peer_info: PeerInfo,
-    /// Optional PIN hash for pairing verification.
-    pub pin_hash: Option<String>,
     /// Timestamp of the handshake (seconds since UNIX epoch).
     pub timestamp: u64,
 }
 
 impl Handshake {
     /// Create a new Handshake message.
-    pub fn new(peer_info: PeerInfo, pin_hash: Option<String>) -> Self {
+    pub fn new(peer_info: PeerInfo) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
         Self {
             peer_info,
-            pin_hash,
             timestamp,
         }
     }
@@ -220,6 +222,26 @@ pub enum Message {
     FileChunk(FileChunk),
     /// Transfer acknowledgment.
     Ack(TransferAck),
+    /// One side's SPAKE2 message in the PIN pairing exchange.
+    ///
+    /// Both sides send this simultaneously; SPAKE2 is one round.
+    PairingHello {
+        /// The opaque SPAKE2 element. Reveals nothing about the PIN.
+        spake: Vec<u8>,
+    },
+    /// Key confirmation, proving the sender derived the same key and saw the
+    /// same pair of TLS certificate fingerprints.
+    PairingConfirm {
+        /// Hex-encoded keyed BLAKE3 MAC over the channel binding.
+        mac: String,
+    },
+    /// The outcome of a pairing exchange, so the peer learns why it failed.
+    PairingResult {
+        /// Whether this side accepted the pairing.
+        accepted: bool,
+        /// Human-readable reason when rejected.
+        reason: Option<String>,
+    },
     /// Ping for keepalive.
     Ping { timestamp: u64 },
     /// Pong response to a ping.
@@ -280,10 +302,46 @@ mod tests {
     #[test]
     fn test_handshake_creation() {
         let peer = PeerInfo::new(PeerId::new("p1"), "Dev", "linux");
-        let hs = Handshake::new(peer.clone(), Some("pin123".into()));
+        let hs = Handshake::new(peer.clone());
         assert_eq!(hs.peer_info, peer);
-        assert_eq!(hs.pin_hash, Some("pin123".into()));
         assert!(hs.timestamp > 0);
+    }
+
+    #[test]
+    fn test_handshake_carries_no_pin_material() {
+        let peer = PeerInfo::new(PeerId::new("p1"), "Dev", "linux");
+        let json = String::from_utf8(Message::Handshake(Handshake::new(peer)).to_bytes().unwrap())
+            .unwrap();
+        assert!(
+            !json.contains("pin"),
+            "the handshake must not carry PIN material: {}",
+            json
+        );
+    }
+
+    #[test]
+    fn test_pairing_messages_round_trip() {
+        let messages = vec![
+            Message::PairingHello {
+                spake: vec![1, 2, 3, 4],
+            },
+            Message::PairingConfirm {
+                mac: "deadbeef".into(),
+            },
+            Message::PairingResult {
+                accepted: false,
+                reason: Some("wrong PIN".into()),
+            },
+            Message::PairingResult {
+                accepted: true,
+                reason: None,
+            },
+        ];
+
+        for msg in messages {
+            let decoded = Message::from_bytes(&msg.to_bytes().unwrap()).unwrap();
+            assert_eq!(msg, decoded);
+        }
     }
 
     #[test]
@@ -330,7 +388,7 @@ mod tests {
     #[test]
     fn test_message_serialization_roundtrip() {
         let peer = PeerInfo::new(PeerId::new("p1"), "Dev", "linux");
-        let hs = Handshake::new(peer, None);
+        let hs = Handshake::new(peer);
         let msg = Message::Handshake(hs.clone());
 
         let bytes = msg.to_bytes().unwrap();
@@ -353,7 +411,7 @@ mod tests {
     fn test_all_message_variants_serialize() {
         let peer = PeerInfo::new(PeerId::new("p1"), "Dev", "linux");
         let messages = vec![
-            Message::Handshake(Handshake::new(peer, None)),
+            Message::Handshake(Handshake::new(peer)),
             Message::Clipboard {
                 seq: 7,
                 item: ClipboardItem::from_text("test", PeerId::new("p1")),

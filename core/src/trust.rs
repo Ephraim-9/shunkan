@@ -5,24 +5,35 @@
 //! store at pairing time. That is the whole trust model, and it is what
 //! [`PinnedFingerprintVerifier`] enforces during the TLS handshake.
 //!
-//! ## Pairing mode
+//! Both directions are enforced: [`PinnedFingerprintVerifier`] checks the peer
+//! a client dials, and [`PinnedClientCertVerifier`] checks the peer a server
+//! accepts. That is mutual TLS against the paired-device store — an
+//! unauthorized device is refused during the handshake rather than after it.
 //!
-//! An empty store can never grow if unknown peers are always rejected, so the
-//! store carries an explicit *pairing mode* flag. While pairing mode is on, an
-//! unknown certificate is accepted and its fingerprint is recorded
-//! (trust-on-first-use). While it is off — the default — an unknown
-//! fingerprint aborts the handshake.
+//! ## Pairing mode, and why a pin is not a pairing
 //!
-//! Pairing mode is deliberately a visible, switchable piece of state rather
-//! than an implicit "accept anything" default: the PIN exchange that gates it
-//! is added in a later change, and until then enabling it is the operator's
-//! explicit decision.
+//! An empty store can never grow if unknown certificates are always rejected,
+//! so the store carries an explicit *pairing mode* flag. While it is on, an
+//! unknown certificate is **provisionally** pinned; while it is off — the
+//! default — an unknown fingerprint aborts the handshake.
+//!
+//! A provisional pin buys exactly one thing: the ability to run the PIN
+//! exchange in [`crate::pairing`] over that channel. It is not operational
+//! trust. [`TrustStore::is_trusted_fingerprint`] returns `false` for it until
+//! [`TrustStore::confirm`] records a successful PAKE, and a failed exchange
+//! calls [`TrustStore::forget_unconfirmed_fingerprint`] so nothing usable is
+//! left behind.
+//!
+//! Without that distinction, "pairing mode" would just be "trust anyone who
+//! connects while the window is open" — which is the hole the PIN is supposed
+//! to close.
 
 use crate::identity::fingerprint_of;
 use anyhow::{Context, Result};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{DigitallySignedStruct, Error as TlsError, SignatureScheme};
+use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
+use rustls::{DigitallySignedStruct, DistinguishedName, Error as TlsError, SignatureScheme};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -45,10 +56,25 @@ pub struct PairedPeer {
     pub fingerprint: String,
     /// When the pairing was recorded (seconds since UNIX epoch).
     pub paired_at: u64,
+    /// Whether the PIN exchange completed for this pairing.
+    ///
+    /// A certificate pinned during trust-on-first-use starts **unconfirmed**:
+    /// it is enough to carry the pairing exchange itself and nothing more.
+    /// Only a successful PAKE confirmation makes a device operationally
+    /// trusted. Without this distinction, "pairing mode" would just be "trust
+    /// anyone who connects while the window is open".
+    #[serde(default = "confirmed_by_default")]
+    pub confirmed: bool,
+}
+
+/// Entries written before this field existed were created by an explicit
+/// `pair()` call, which is a confirmed pairing.
+fn confirmed_by_default() -> bool {
+    true
 }
 
 impl PairedPeer {
-    /// Record a new pairing, stamped with the current time.
+    /// Record a new, confirmed pairing, stamped with the current time.
     pub fn new(
         peer_id: impl Into<String>,
         device_name: impl Into<String>,
@@ -64,6 +90,24 @@ impl PairedPeer {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
+            confirmed: true,
+        }
+    }
+
+    /// Record a provisional pairing — pinned, but not yet PIN-confirmed.
+    pub fn provisional(fingerprint: impl Into<String>) -> Self {
+        let fingerprint = fingerprint.into();
+        let short = &fingerprint[..fingerprint.len().min(16)];
+        Self {
+            peer_id: format!("unconfirmed-{}", short),
+            device_name: "unconfirmed".to_string(),
+            platform: "unknown".to_string(),
+            paired_at: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            fingerprint,
+            confirmed: false,
         }
     }
 }
@@ -140,21 +184,24 @@ impl TrustStore {
         })
     }
 
-    /// Turn trust-on-first-use on or off.
+    /// Open or close the pairing window.
+    ///
+    /// While open, an unknown certificate is provisionally pinned so the PIN
+    /// exchange can run over it. It does not become operationally trusted
+    /// without a successful [`TrustStore::confirm`].
     pub fn set_pairing_mode(&self, enabled: bool) {
         let mut state = self.lock();
         state.pairing_mode = enabled;
         if enabled {
             log::warn!(
-                "Pairing mode ENABLED — unknown devices on this network will be trusted on first \
-                 connection until it is turned off"
+                "Pairing window OPEN — unknown devices may attempt a PIN pairing until it closes"
             );
         } else {
-            log::info!("Pairing mode disabled — only paired devices are accepted");
+            log::info!("Pairing window closed — only paired devices are accepted");
         }
     }
 
-    /// Whether trust-on-first-use is currently enabled.
+    /// Whether the pairing window is currently open.
     pub fn pairing_mode(&self) -> bool {
         self.lock().pairing_mode
     }
@@ -180,9 +227,80 @@ impl TrustStore {
         Ok(removed)
     }
 
-    /// Whether this fingerprint belongs to a paired device.
+    /// Whether this fingerprint belongs to a **confirmed** paired device.
+    ///
+    /// A provisionally pinned certificate is not trusted here: it can carry a
+    /// pairing exchange and nothing else.
     pub fn is_trusted_fingerprint(&self, fingerprint: &str) -> bool {
+        self.peer_by_fingerprint(fingerprint)
+            .is_some_and(|peer| peer.confirmed)
+    }
+
+    /// Whether this fingerprint is pinned at all, confirmed or not.
+    pub fn is_pinned_fingerprint(&self, fingerprint: &str) -> bool {
         self.lock().by_fingerprint.contains_key(fingerprint)
+    }
+
+    /// Drop a provisional pin by fingerprint. Confirmed pairings are left alone.
+    ///
+    /// Called when a pairing exchange fails, so a failed attempt does not leave
+    /// a usable pin behind.
+    pub fn forget_unconfirmed_fingerprint(&self, fingerprint: &str) -> Result<bool> {
+        let Some(peer) = self.peer_by_fingerprint(fingerprint) else {
+            return Ok(false);
+        };
+        if peer.confirmed {
+            return Ok(false);
+        }
+
+        log::warn!(
+            "Dropping unconfirmed pin for fingerprint {}…",
+            &fingerprint[..fingerprint.len().min(16)]
+        );
+        self.lock().remove(&peer.peer_id);
+        self.save()?;
+        Ok(true)
+    }
+
+    /// Mark a provisionally pinned certificate as a confirmed pairing, filling
+    /// in the peer metadata carried by the handshake.
+    pub fn confirm(
+        &self,
+        fingerprint: &str,
+        peer_id: &str,
+        device_name: &str,
+        platform: &str,
+    ) -> Result<()> {
+        let existing = self.peer_by_fingerprint(fingerprint);
+        let paired_at = existing.as_ref().map(|p| p.paired_at).unwrap_or_else(|| {
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        });
+
+        {
+            let mut state = self.lock();
+            if let Some(existing) = existing {
+                state.remove(&existing.peer_id);
+            }
+            state.insert(PairedPeer {
+                peer_id: peer_id.to_string(),
+                device_name: device_name.to_string(),
+                platform: platform.to_string(),
+                fingerprint: fingerprint.to_string(),
+                paired_at,
+                confirmed: true,
+            });
+        }
+
+        log::info!(
+            "Pairing confirmed with {} ({}) — fingerprint {}… is now trusted",
+            device_name,
+            peer_id,
+            &fingerprint[..fingerprint.len().min(16)]
+        );
+        self.save()
     }
 
     /// Look up a pairing record by certificate fingerprint.
@@ -239,7 +357,10 @@ impl TrustStore {
     ///
     /// Returns the fingerprint on success so the caller can bind the connection
     /// to a known peer.
-    fn authorize_certificate(&self, cert: &CertificateDer<'_>) -> Result<String, TlsError> {
+    pub(crate) fn authorize_certificate(
+        &self,
+        cert: &CertificateDer<'_>,
+    ) -> Result<String, TlsError> {
         let fingerprint = fingerprint_of(cert);
 
         {
@@ -259,54 +380,18 @@ impl TrustStore {
             }
         }
 
-        // Pairing mode: trust on first use. The peer ID and device name are not
-        // known at TLS time, so record a provisional entry keyed by fingerprint;
-        // the handshake message that follows upgrades it with real metadata.
-        let provisional = PairedPeer::new(
-            format!("unknown-{}", &fingerprint[..16]),
-            "unknown",
-            "unknown",
-            fingerprint.clone(),
-        );
+        // Pairing mode: pin provisionally so the PIN exchange can run over the
+        // channel. Until that exchange confirms, this certificate buys nothing
+        // else — `is_trusted_fingerprint` still says no.
         log::warn!(
-            "Trust-on-first-use: pinning previously unseen fingerprint {}…",
+            "Pairing mode: provisionally pinning unseen fingerprint {}… (unconfirmed until the PIN exchange succeeds)",
             &fingerprint[..16]
         );
-        self.lock().insert(provisional);
+        self.lock().insert(PairedPeer::provisional(&fingerprint));
         if let Err(e) = self.save() {
-            log::error!("Failed to persist trust-on-first-use pairing: {}", e);
+            log::error!("Failed to persist provisional pin: {}", e);
         }
         Ok(fingerprint)
-    }
-
-    /// Replace the provisional record created during trust-on-first-use with
-    /// the real peer metadata carried by the handshake.
-    pub fn promote_provisional(
-        &self,
-        fingerprint: &str,
-        peer_id: &str,
-        device_name: &str,
-        platform: &str,
-    ) -> Result<()> {
-        let existing = self.peer_by_fingerprint(fingerprint);
-        let Some(existing) = existing else {
-            return Ok(());
-        };
-        if existing.peer_id == peer_id && existing.platform == platform {
-            return Ok(());
-        }
-
-        let mut state = self.lock();
-        state.remove(&existing.peer_id);
-        state.insert(PairedPeer {
-            peer_id: peer_id.to_string(),
-            device_name: device_name.to_string(),
-            platform: platform.to_string(),
-            fingerprint: fingerprint.to_string(),
-            paired_at: existing.paired_at,
-        });
-        drop(state);
-        self.save()
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, TrustState> {
@@ -362,6 +447,83 @@ impl ServerCertVerifier for PinnedFingerprintVerifier {
     ) -> Result<ServerCertVerified, TlsError> {
         self.trust.authorize_certificate(end_entity)?;
         Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, TlsError> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, TlsError> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.provider
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
+
+/// A [`ClientCertVerifier`] that accepts an inbound peer iff its certificate
+/// fingerprint is pinned in the [`TrustStore`].
+///
+/// This is the server-side half of mutual TLS. Without it, `accept()` returned
+/// every incoming connection with no validation at all — a clipboard any
+/// machine on a café Wi-Fi could read from and inject into. Rejecting here
+/// means an unauthorized peer never completes a handshake, rather than being
+/// turned away after one.
+#[derive(Debug)]
+pub struct PinnedClientCertVerifier {
+    trust: Arc<TrustStore>,
+    provider: Arc<rustls::crypto::CryptoProvider>,
+    /// Empty: we have no CA subjects to hint, because there is no CA.
+    root_hints: Vec<DistinguishedName>,
+}
+
+impl PinnedClientCertVerifier {
+    /// Build a verifier backed by the given trust store.
+    pub fn new(trust: Arc<TrustStore>) -> Self {
+        Self {
+            trust,
+            provider: Arc::new(rustls::crypto::ring::default_provider()),
+            root_hints: Vec::new(),
+        }
+    }
+}
+
+impl ClientCertVerifier for PinnedClientCertVerifier {
+    fn root_hint_subjects(&self) -> &[DistinguishedName] {
+        &self.root_hints
+    }
+
+    fn verify_client_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _now: UnixTime,
+    ) -> Result<ClientCertVerified, TlsError> {
+        self.trust.authorize_certificate(end_entity)?;
+        Ok(ClientCertVerified::assertion())
     }
 
     fn verify_tls12_signature(
@@ -492,16 +654,21 @@ mod tests {
     }
 
     #[test]
-    fn test_unknown_certificate_pinned_in_pairing_mode() {
+    fn test_unknown_certificate_pinned_provisionally_in_pairing_mode() {
         let identity = DeviceIdentity::generate().unwrap();
         let store = TrustStore::in_memory();
         store.set_pairing_mode(true);
 
         let fp = store.authorize_certificate(identity.cert_der()).unwrap();
         assert_eq!(fp, identity.fingerprint());
-        assert!(store.is_trusted_fingerprint(identity.fingerprint()));
 
-        // Once pinned, it is accepted even after pairing mode is turned off.
+        // Pinned, so the PIN exchange can run over the channel…
+        assert!(store.is_pinned_fingerprint(identity.fingerprint()));
+        // …but a pin is not a pairing.
+        assert!(!store.is_trusted_fingerprint(identity.fingerprint()));
+
+        // The pin survives the window closing, so the exchange in flight can
+        // still complete.
         store.set_pairing_mode(false);
         assert!(store.authorize_certificate(identity.cert_der()).is_ok());
     }
@@ -523,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn test_promote_provisional_replaces_placeholder_metadata() {
+    fn test_confirm_replaces_provisional_metadata_and_grants_trust() {
         let identity = DeviceIdentity::generate().unwrap();
         let store = TrustStore::in_memory();
         store.set_pairing_mode(true);
@@ -531,26 +698,91 @@ mod tests {
 
         let provisional = store.peer_by_fingerprint(identity.fingerprint()).unwrap();
         assert_eq!(provisional.platform, "unknown");
+        assert!(!provisional.confirmed);
+        assert!(!store.is_trusted_fingerprint(identity.fingerprint()));
 
         store
-            .promote_provisional(identity.fingerprint(), "peer-real", "ThinkPad X1", "linux")
+            .confirm(identity.fingerprint(), "peer-real", "ThinkPad X1", "linux")
             .unwrap();
 
         assert_eq!(store.len(), 1);
-        let promoted = store.peer_by_fingerprint(identity.fingerprint()).unwrap();
-        assert_eq!(promoted.peer_id, "peer-real");
-        assert_eq!(promoted.device_name, "ThinkPad X1");
-        assert_eq!(promoted.platform, "linux");
-        assert_eq!(promoted.paired_at, provisional.paired_at);
+        let confirmed = store.peer_by_fingerprint(identity.fingerprint()).unwrap();
+        assert_eq!(confirmed.peer_id, "peer-real");
+        assert_eq!(confirmed.device_name, "ThinkPad X1");
+        assert_eq!(confirmed.platform, "linux");
+        assert_eq!(confirmed.paired_at, provisional.paired_at);
+        assert!(confirmed.confirmed);
+        assert!(store.is_trusted_fingerprint(identity.fingerprint()));
         assert!(store.peer(&provisional.peer_id).is_none());
     }
 
     #[test]
-    fn test_promote_provisional_is_a_noop_for_unknown_fingerprint() {
+    fn test_confirm_works_for_a_fingerprint_that_was_never_pinned() {
         let store = TrustStore::in_memory();
         store
-            .promote_provisional("not-a-known-fp", "peer-x", "Device", "linux")
+            .confirm("fp-new", "peer-x", "Device", "linux")
             .unwrap();
+        assert!(store.is_trusted_fingerprint("fp-new"));
+    }
+
+    /// A provisional pin buys exactly one thing: the ability to run the PIN
+    /// exchange. Without this, "pairing mode" would be "trust anyone who
+    /// connects while the window is open".
+    #[test]
+    fn test_provisional_pin_is_not_operational_trust() {
+        let identity = DeviceIdentity::generate().unwrap();
+        let store = TrustStore::in_memory();
+        store.set_pairing_mode(true);
+        store.authorize_certificate(identity.cert_der()).unwrap();
+
+        assert!(store.is_pinned_fingerprint(identity.fingerprint()));
+        assert!(!store.is_trusted_fingerprint(identity.fingerprint()));
+    }
+
+    /// A failed pairing must not leave a usable pin behind.
+    #[test]
+    fn test_failed_pairing_drops_the_provisional_pin() {
+        let identity = DeviceIdentity::generate().unwrap();
+        let store = TrustStore::in_memory();
+        store.set_pairing_mode(true);
+        store.authorize_certificate(identity.cert_der()).unwrap();
+
+        assert!(store
+            .forget_unconfirmed_fingerprint(identity.fingerprint())
+            .unwrap());
+        assert!(!store.is_pinned_fingerprint(identity.fingerprint()));
         assert!(store.is_empty());
+
+        // And with pairing mode off, the certificate is refused again.
+        store.set_pairing_mode(false);
+        assert!(store.authorize_certificate(identity.cert_der()).is_err());
+    }
+
+    /// Dropping unconfirmed pins must never touch a real pairing.
+    #[test]
+    fn test_forgetting_unconfirmed_leaves_confirmed_pairings_alone() {
+        let store = TrustStore::in_memory();
+        store
+            .pair(PairedPeer::new("peer-1", "Phone", "android", "fp-1"))
+            .unwrap();
+
+        assert!(!store.forget_unconfirmed_fingerprint("fp-1").unwrap());
+        assert!(store.is_trusted_fingerprint("fp-1"));
+        assert!(!store.forget_unconfirmed_fingerprint("never-seen").unwrap());
+    }
+
+    #[test]
+    fn test_pinned_but_unconfirmed_peers_are_not_reported_as_trusted() {
+        let store = TrustStore::in_memory();
+        store
+            .pair(PairedPeer::new("p", "D", "linux", "fp-ok"))
+            .unwrap();
+        store.set_pairing_mode(true);
+        let identity = DeviceIdentity::generate().unwrap();
+        store.authorize_certificate(identity.cert_der()).unwrap();
+
+        assert_eq!(store.len(), 2, "both records are stored");
+        assert!(store.is_trusted_fingerprint("fp-ok"));
+        assert!(!store.is_trusted_fingerprint(identity.fingerprint()));
     }
 }

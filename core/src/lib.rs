@@ -12,9 +12,10 @@
 //! - [`identity`] — persistent device identity (peer ID, certificate, key)
 //! - [`trust`] — paired-device store and pinned-fingerprint TLS verification
 //! - [`transport`] — QUIC transport bound to a device identity
+//! - [`pairing`] — PIN-authenticated pairing (SPAKE2) bound to certificates
 //! - [`protocol`] — Wire protocol message types
 //! - [`transfer`] — file chunk reassembly and verification
-//! - [`crypto`] — X25519 key exchange scaffold and PIN verification
+//! - [`crypto`] — PIN type and the TLS/QUIC configuration binding the two
 //! - [`history`] — In-memory LRU clipboard history with BLAKE3 dedup
 //! - [`hashing`] — BLAKE3 chunk hasher for file integrity
 //!
@@ -31,6 +32,7 @@ pub mod discovery;
 pub mod hashing;
 pub mod history;
 pub mod identity;
+pub mod pairing;
 pub mod protocol;
 pub mod transfer;
 pub mod transport;
