@@ -41,10 +41,12 @@ impl DiscoveredPeer {
             .filter(|fp| !fp.is_empty())
     }
 
-    /// The first socket address this peer can be dialled on.
+    /// The first reachable socket address this peer can be dialled on.
+    /// Prefers IPv4 since TransportClient binds to 0.0.0.0:0.
     pub fn socket_addr(&self) -> Option<std::net::SocketAddr> {
         self.addresses
-            .first()
+            .iter()
+            .find(|ip| ip.is_ipv4())
             .map(|ip| std::net::SocketAddr::new(*ip, self.port))
     }
 }

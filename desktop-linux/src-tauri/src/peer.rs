@@ -365,7 +365,7 @@ fn apply_remote_clipboard(state: &Arc<AppState>, item: shunkan_core::protocol::C
 pub async fn serve_inbound(state: Arc<AppState>, conn: TransportConnection) {
     let addr = conn.remote_address();
     if let Err(e) = serve(state, conn, Role::Listener).await {
-        log::warn!("Inbound connection from {} failed: {}", addr, e);
+        log::warn!("Inbound connection from {} failed: {:#}", addr, e);
     }
 }
 
@@ -388,7 +388,7 @@ pub async fn dial(
 
     let connected_at = now_secs();
     if let Err(e) = serve(state, conn, Role::Dialer).await {
-        log::warn!("Connection to {} failed: {}", label, e);
+        log::warn!("Connection to {} failed: {:#}", label, e);
     }
     log::debug!(
         "Connection to {} lasted {}s",

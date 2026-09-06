@@ -328,7 +328,9 @@ async fn run_mdns_discovery(state: Arc<AppState>, hostname: String, port: u16) -
                     log::trace!("Already connected to {}", peer_id);
                     continue;
                 }
-                if !peer::should_dial(&state.peer_id().0, &advertisement.peer_id) {
+                if state.pairing_pin().is_none()
+                    && !peer::should_dial(&state.peer_id().0, &advertisement.peer_id)
+                {
                     log::debug!("Waiting for {} to dial us (tie-break)", peer_id);
                     continue;
                 }
