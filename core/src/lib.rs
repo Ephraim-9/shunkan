@@ -9,8 +9,11 @@
 //! ## Modules
 //!
 //! - [`discovery`] — mDNS-SD service broadcasting and discovery
-//! - [`transport`] — QUIC transport with self-signed TLS certificates
+//! - [`identity`] — persistent device identity (peer ID, certificate, key)
+//! - [`trust`] — paired-device store and pinned-fingerprint TLS verification
+//! - [`transport`] — QUIC transport bound to a device identity
 //! - [`protocol`] — Wire protocol message types
+//! - [`transfer`] — file chunk reassembly and verification
 //! - [`crypto`] — X25519 key exchange scaffold and PIN verification
 //! - [`history`] — In-memory LRU clipboard history with BLAKE3 dedup
 //! - [`hashing`] — BLAKE3 chunk hasher for file integrity
@@ -27,8 +30,11 @@ pub mod crypto;
 pub mod discovery;
 pub mod hashing;
 pub mod history;
+pub mod identity;
 pub mod protocol;
+pub mod transfer;
 pub mod transport;
+pub mod trust;
 
 /// Default QUIC port for Shunkan P2P connections (per ADR-001).
 pub const DEFAULT_PORT: u16 = 4433;

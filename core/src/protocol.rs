@@ -129,7 +129,11 @@ impl ClipboardItem {
 
     /// Create a text clipboard item from a string.
     pub fn from_text(text: impl Into<String>, source_peer: PeerId) -> Self {
-        Self::new(ContentType::PlainText, text.into().into_bytes(), source_peer)
+        Self::new(
+            ContentType::PlainText,
+            text.into().into_bytes(),
+            source_peer,
+        )
     }
 }
 
@@ -201,7 +205,17 @@ pub enum Message {
     /// Initial handshake message for pairing.
     Handshake(Handshake),
     /// Clipboard item synchronization.
-    Clipboard(ClipboardItem),
+    ///
+    /// `seq` is a per-connection monotonic counter assigned by the sender.
+    /// Clipboard traffic travels on a single ordered stream, so this is a
+    /// belt-and-braces check rather than the primary ordering mechanism — but
+    /// it also survives a reconnect, where stream ordering does not.
+    Clipboard {
+        /// Sender-assigned monotonic sequence number.
+        seq: u64,
+        /// The clipboard item being synchronized.
+        item: ClipboardItem,
+    },
     /// File chunk transfer.
     FileChunk(FileChunk),
     /// Transfer acknowledgment.
@@ -340,7 +354,10 @@ mod tests {
         let peer = PeerInfo::new(PeerId::new("p1"), "Dev", "linux");
         let messages = vec![
             Message::Handshake(Handshake::new(peer, None)),
-            Message::Clipboard(ClipboardItem::from_text("test", PeerId::new("p1"))),
+            Message::Clipboard {
+                seq: 7,
+                item: ClipboardItem::from_text("test", PeerId::new("p1")),
+            },
             Message::FileChunk(FileChunk::new("tx", "f.bin", 100, 0, 1, vec![0xFF])),
             Message::Ack(TransferAck {
                 transfer_id: "tx".into(),

@@ -1,15 +1,17 @@
-//! Tauri IPC command stubs for the Shunkan desktop application.
+//! IPC commands for the Shunkan desktop application.
 //!
 //! These functions will be registered as `#[tauri::command]` handlers when
-//! Tauri v2 is fully integrated. For now, they serve as the bridge API
-//! between the glassmorphic command palette UI and `shunkan-core`.
+//! Tauri v2 is fully integrated. They are the bridge API between the
+//! glassmorphic command palette UI and the daemon's [`AppState`].
 //!
 //! # IPC Contract
 //!
-//! The frontend (app.js) invokes these via `window.__TAURI__.invoke("command_name", { args })`.
-//! Each command returns a JSON-serializable result.
+//! The frontend (app.js) invokes these by name; each returns a
+//! JSON-serializable result.
 
-use log::{debug, info};
+use crate::clipboard::SessionType;
+use crate::state::AppState;
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use shunkan_core::protocol::{ClipboardItem, ContentType, PeerId, PeerInfo};
 
@@ -98,65 +100,129 @@ impl From<&ClipboardItem> for HistoryEntry {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Tauri IPC Command Stubs
+// IPC Commands
 //
-// When Tauri is integrated, annotate each with `#[tauri::command]`.
-// For now, these are plain async functions matching the expected IPC contract.
+// Each is backed by the daemon's shared `AppState`. When Tauri is integrated,
+// annotate each with `#[tauri::command]` and take `State<'_, Arc<AppState>>`
+// instead of an explicit parameter.
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Get the list of discovered peers on the local network.
+/// Get the list of connected peers on the local network.
 ///
 /// IPC: `invoke("get_peers")` → `PeerView[]`
-pub async fn get_peers() -> Vec<PeerView> {
-    info!("IPC: get_peers");
-    // TODO: Wire to shunkan_core::discovery when available
-    vec![]
+pub fn get_peers(state: &AppState) -> Vec<PeerView> {
+    let peers: Vec<PeerView> = state
+        .peers()
+        .iter()
+        .map(|handle| PeerView::from(&handle.info))
+        .collect();
+    debug!("IPC: get_peers → {} peer(s)", peers.len());
+    peers
 }
 
 /// Get the clipboard history (most recent first).
 ///
 /// IPC: `invoke("get_history", { limit })` → `HistoryEntry[]`
-pub async fn get_history(limit: Option<usize>) -> Vec<HistoryEntry> {
-    let limit = limit.unwrap_or(50);
-    info!("IPC: get_history (limit={})", limit);
-    // TODO: Wire to shunkan_core::history when available
-    vec![]
+pub fn get_history(state: &AppState, limit: Option<usize>) -> Vec<HistoryEntry> {
+    let limit = limit.unwrap_or(DEFAULT_HISTORY_LIMIT);
+    let entries: Vec<HistoryEntry> = state
+        .history_snapshot(limit)
+        .iter()
+        .map(HistoryEntry::from)
+        .collect();
+    debug!("IPC: get_history (limit={}) → {}", limit, entries.len());
+    entries
 }
 
 /// Send clipboard text to a specific peer.
 ///
-/// IPC: `invoke("send_to_peer", { peer_id, text })` → `bool`
-pub async fn send_to_peer(peer_id: String, text: String) -> bool {
-    info!(
-        "IPC: send_to_peer (peer={}, {} bytes)",
-        peer_id,
-        text.len()
-    );
-    // TODO: Wire to shunkan_core::transport when available
-    debug!("Would send to peer {}: {} bytes", peer_id, text.len());
-    false
+/// IPC: `invoke("send_to_peer", { peerId, text })` → `bool`
+pub fn send_to_peer(state: &AppState, peer_id: &str, text: String) -> bool {
+    let target = PeerId::new(peer_id);
+    let item = ClipboardItem::from_text(text, state.peer_id().clone());
+    let queued = state.send_to_peer(&target, item);
+
+    if queued {
+        info!("IPC: send_to_peer → queued for {}", peer_id);
+    } else {
+        warn!("IPC: send_to_peer → {} is not connected", peer_id);
+    }
+    queued
 }
 
 /// Paste a history entry to the system clipboard.
 ///
 /// IPC: `invoke("paste_entry", { hash })` → `bool`
-pub async fn paste_entry(hash: String) -> bool {
-    info!("IPC: paste_entry (hash={})", &hash[..8.min(hash.len())]);
-    // TODO: Look up entry from history by hash and write to clipboard
-    false
+pub fn paste_entry(state: &AppState, hash: &str) -> bool {
+    let Some(item) = state.history_entry(hash) else {
+        warn!("IPC: paste_entry → no history entry {}", short(hash));
+        return false;
+    };
+
+    let text = match item.content_type {
+        ContentType::PlainText | ContentType::RichText | ContentType::FileUri => {
+            match String::from_utf8(item.data) {
+                Ok(text) => text,
+                Err(e) => {
+                    warn!(
+                        "IPC: paste_entry → entry {} is not valid UTF-8: {}",
+                        short(hash),
+                        e
+                    );
+                    return false;
+                }
+            }
+        }
+        ContentType::Image => {
+            warn!("IPC: paste_entry → image entries cannot be pasted as text yet");
+            return false;
+        }
+    };
+
+    match state.clipboard().write_to_clipboard(&text) {
+        Ok(()) => {
+            info!("IPC: paste_entry → wrote {} bytes to clipboard", text.len());
+            true
+        }
+        Err(e) => {
+            warn!("IPC: paste_entry → clipboard write failed: {}", e);
+            false
+        }
+    }
 }
 
 /// Get the current connection status.
 ///
 /// IPC: `invoke("get_status")` → `StatusInfo`
-pub async fn get_status() -> StatusInfo {
-    info!("IPC: get_status");
+pub fn get_status(state: &AppState) -> StatusInfo {
     StatusInfo {
-        peer_count: 0,
-        session_type: "unknown".into(),
-        listening_port: shunkan_core::DEFAULT_PORT,
+        peer_count: state.peer_count(),
+        session_type: session_label(state.session_type),
+        listening_port: state.listening_port,
+        history_len: state.history_len(),
+        paired_count: state.trust.len(),
+        pairing_mode: state.trust.pairing_mode(),
         version: env!("CARGO_PKG_VERSION").into(),
     }
+}
+
+/// Default number of history entries returned by `get_history`.
+const DEFAULT_HISTORY_LIMIT: usize = 50;
+
+/// The wire label for a session type, matching what the frontend displays.
+fn session_label(session_type: SessionType) -> String {
+    match session_type {
+        SessionType::X11 => "x11",
+        SessionType::WaylandWlroots => "wayland-wlroots",
+        SessionType::WaylandGnome => "wayland-gnome",
+        SessionType::Unknown => "unknown",
+    }
+    .to_string()
+}
+
+/// Shorten a hash for logging without panicking on a short input.
+fn short(hash: &str) -> &str {
+    &hash[..8.min(hash.len())]
 }
 
 /// Status information returned by `get_status`.
@@ -168,6 +234,12 @@ pub struct StatusInfo {
     pub session_type: String,
     /// The QUIC listening port.
     pub listening_port: u16,
+    /// Number of entries currently in clipboard history.
+    pub history_len: usize,
+    /// Number of devices this device has paired with.
+    pub paired_count: usize,
+    /// Whether trust-on-first-use pairing is currently enabled.
+    pub pairing_mode: bool,
     /// Shunkan desktop version.
     pub version: String,
 }
@@ -203,5 +275,107 @@ mod tests {
         let entry = HistoryEntry::from(&item);
         assert!(entry.preview.len() < 210); // 200 + "…"
         assert_eq!(entry.full_text, Some(long_text));
+    }
+
+    // ── State-backed command tests ───────────────────────────────────────────
+
+    use crate::clipboard::ClipboardMonitor;
+    use shunkan_core::identity::DeviceIdentity;
+    use shunkan_core::trust::TrustStore;
+    use std::sync::Arc;
+
+    fn test_state() -> Arc<AppState> {
+        let identity = Arc::new(DeviceIdentity::generate().unwrap());
+        let peer_info = PeerInfo::new(identity.peer_id().clone(), "TestBox", "linux");
+        Arc::new(AppState::new(
+            identity,
+            Arc::new(TrustStore::in_memory()),
+            peer_info,
+            SessionType::WaylandWlroots,
+            4433,
+            Arc::new(ClipboardMonitor::with_session_type(SessionType::X11)),
+        ))
+    }
+
+    #[test]
+    fn test_get_history_reflects_recorded_items() {
+        let state = test_state();
+        assert!(get_history(&state, None).is_empty());
+
+        state.record_clipboard(ClipboardItem::from_text("first", PeerId::new("p")));
+        state.record_clipboard(ClipboardItem::from_text("second", PeerId::new("p")));
+
+        let entries = get_history(&state, None);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].preview, "second");
+        assert_eq!(entries[1].preview, "first");
+    }
+
+    #[test]
+    fn test_get_history_honours_limit() {
+        let state = test_state();
+        for i in 0..10 {
+            state.record_clipboard(ClipboardItem::from_text(
+                format!("i{}", i),
+                PeerId::new("p"),
+            ));
+        }
+        assert_eq!(get_history(&state, Some(3)).len(), 3);
+    }
+
+    #[test]
+    fn test_get_status_reports_live_state() {
+        let state = test_state();
+        state.record_clipboard(ClipboardItem::from_text("x", PeerId::new("p")));
+
+        let status = get_status(&state);
+        assert_eq!(status.session_type, "wayland-wlroots");
+        assert_eq!(status.listening_port, 4433);
+        assert_eq!(status.history_len, 1);
+        assert_eq!(status.peer_count, 0);
+        assert_eq!(status.paired_count, 0);
+        assert!(!status.pairing_mode);
+        assert_eq!(status.version, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn test_get_peers_is_empty_without_connections() {
+        assert!(get_peers(&test_state()).is_empty());
+    }
+
+    #[test]
+    fn test_send_to_unknown_peer_returns_false() {
+        let state = test_state();
+        assert!(!send_to_peer(&state, "nobody", "hello".into()));
+    }
+
+    #[test]
+    fn test_paste_unknown_entry_returns_false() {
+        let state = test_state();
+        assert!(!paste_entry(&state, "not-a-hash"));
+        // Short hashes must not panic the logging path.
+        assert!(!paste_entry(&state, "ab"));
+        assert!(!paste_entry(&state, ""));
+    }
+
+    #[test]
+    fn test_paste_image_entry_is_refused() {
+        let state = test_state();
+        let item = ClipboardItem::new(ContentType::Image, vec![0x89, 0x50], PeerId::new("p"));
+        let hash = item.content_hash.clone();
+        state.record_clipboard(item);
+
+        assert!(!paste_entry(&state, &hash));
+    }
+
+    #[test]
+    fn test_session_label_covers_every_variant() {
+        assert_eq!(session_label(SessionType::X11), "x11");
+        assert_eq!(
+            session_label(SessionType::WaylandWlroots),
+            "wayland-wlroots"
+        );
+        assert_eq!(session_label(SessionType::WaylandGnome), "wayland-gnome");
+        assert_eq!(session_label(SessionType::Unknown), "unknown");
     }
 }

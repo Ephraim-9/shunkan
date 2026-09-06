@@ -1,7 +1,10 @@
 # Rust
 /target/
 **/target/
-Cargo.lock
+# Cargo.lock is intentionally committed: this workspace ships binaries, so CI
+# and every developer must resolve to the same dependency set. Without it a
+# broken upstream release lands as an unreproducible failure and a security
+# review has no fixed set to audit.
 
 # Android / Gradle
 .gradle/

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#
+# Shunkan pre-commit hook — runs the same gates CI does, so formatting and lint
+# drift is caught before it becomes a red build.
+#
+# Install with:
+#   git config core.hooksPath .githooks
+#
+# Skip for one commit with:
+#   SKIP_HOOKS=1 git commit ...
+
+set -euo pipefail
+
+if [[ "${SKIP_HOOKS:-0}" != "0" ]]; then
+    echo "pre-commit: skipped (SKIP_HOOKS is set)"
+    exit 0
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "pre-commit: cargo not found, skipping Rust checks"
+    exit 0
+fi
+
+echo "pre-commit: cargo fmt --all --check"
+if ! cargo fmt --all --check; then
+    echo
+    echo "pre-commit: formatting differs. Run 'cargo fmt --all' and stage the result."
+    exit 1
+fi
+
+echo "pre-commit: cargo clippy --workspace --all-targets -- -D warnings"
+if ! cargo clippy --workspace --all-targets -- -D warnings; then
+    echo
+    echo "pre-commit: clippy found lints. Fix them, or justify with a scoped #[allow]."
+    exit 1
+fi
+
+echo "pre-commit: ok"

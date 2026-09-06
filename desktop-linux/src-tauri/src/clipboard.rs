@@ -62,7 +62,9 @@ impl SessionType {
             _ => {
                 // Fallback: check if WAYLAND_DISPLAY is set even without XDG_SESSION_TYPE
                 if wayland_display.is_some() {
-                    info!("XDG_SESSION_TYPE not set but WAYLAND_DISPLAY present — assuming Wayland");
+                    info!(
+                        "XDG_SESSION_TYPE not set but WAYLAND_DISPLAY present — assuming Wayland"
+                    );
                     let desktop_lower = current_desktop.to_lowercase();
                     if desktop_lower.contains("gnome") {
                         SessionType::WaylandGnome
@@ -105,6 +107,12 @@ pub struct ClipboardMonitor {
     poll_interval: Duration,
 }
 
+impl Default for ClipboardMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClipboardMonitor {
     /// Create a new clipboard monitor with automatic session detection.
     pub fn new() -> Self {
@@ -143,8 +151,7 @@ impl ClipboardMonitor {
     ///
     /// Returns `None` if the clipboard hasn't changed or contains our own content.
     pub fn poll_for_changes(&self) -> Result<Option<String>> {
-        let mut clipboard =
-            Clipboard::new().context("Failed to initialize arboard clipboard")?;
+        let mut clipboard = Clipboard::new().context("Failed to initialize arboard clipboard")?;
 
         let text = match clipboard.get_text() {
             Ok(t) => t,
@@ -192,8 +199,7 @@ impl ClipboardMonitor {
     /// After writing, the next `poll_for_changes` call will skip this content
     /// since we recognize it as our own write via the BLAKE3 hash nonce.
     pub fn write_to_clipboard(&self, text: &str) -> Result<()> {
-        let mut clipboard =
-            Clipboard::new().context("Failed to initialize arboard clipboard")?;
+        let mut clipboard = Clipboard::new().context("Failed to initialize arboard clipboard")?;
 
         let hash = Self::hash_content(text);
 

@@ -1,11 +1,34 @@
 //! X25519 key exchange scaffold and PIN verification.
 //!
-//! Provides utilities for generating self-signed TLS certificates (via `rcgen`),
-//! PIN-based pairing verification using BLAKE3 hashing, and a scaffold for
-//! future X25519 Diffie-Hellman key exchange.
+//! Provides PIN-based pairing verification using BLAKE3 hashing, a scaffold for
+//! future X25519 Diffie-Hellman key exchange, and the QUIC/TLS configuration
+//! that binds a [`DeviceIdentity`] to a [`TrustStore`].
+//!
+//! ## Why there is no `generate_self_signed_cert()` any more
+//!
+//! There used to be one, and it minted a fresh keypair on every call while
+//! building a client config whose root store contained *that same certificate*.
+//! Server and client each called it independently, so the client trusted a
+//! certificate the server had never seen and every handshake died with
+//! `BadSignature`. Certificates now come from a persisted [`DeviceIdentity`],
+//! and peer trust comes from fingerprints pinned in the [`TrustStore`].
 
+use crate::identity::DeviceIdentity;
+use crate::trust::{PinnedFingerprintVerifier, TrustStore};
 use anyhow::{Context, Result};
 use std::sync::Arc;
+
+/// Install the ring crypto provider exactly once per process.
+///
+/// `install_default` errors if a provider is already installed, which is a
+/// benign race when several endpoints start concurrently; `Once` makes the
+/// outcome deterministic instead.
+fn install_crypto_provider() {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
 
 /// A 6-digit PIN used for device pairing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,11 +42,16 @@ impl PairingPin {
         Self(format!("{:06}", pin))
     }
 
-    /// Create a PairingPin from a string. Returns an error if the PIN is not
+    /// Parse a PairingPin from a string. Returns an error if the PIN is not
     /// exactly 6 digits.
-    pub fn from_str(pin: &str) -> Result<Self> {
+    ///
+    /// Also available as [`std::str::FromStr`], so `"123456".parse()` works.
+    pub fn parse(pin: &str) -> Result<Self> {
         anyhow::ensure!(pin.len() == 6, "PIN must be exactly 6 digits");
-        anyhow::ensure!(pin.chars().all(|c| c.is_ascii_digit()), "PIN must contain only digits");
+        anyhow::ensure!(
+            pin.chars().all(|c| c.is_ascii_digit()),
+            "PIN must contain only digits"
+        );
         Ok(Self(pin.to_string()))
     }
 
@@ -47,6 +75,14 @@ impl PairingPin {
     }
 }
 
+impl std::str::FromStr for PairingPin {
+    type Err = anyhow::Error;
+
+    fn from_str(pin: &str) -> Result<Self> {
+        Self::parse(pin)
+    }
+}
+
 impl std::fmt::Display for PairingPin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Display as XXX-XXX for readability
@@ -54,59 +90,51 @@ impl std::fmt::Display for PairingPin {
     }
 }
 
-/// Generate a self-signed TLS certificate and private key for QUIC transport.
+/// Build the rustls server config presenting this device's persisted identity.
 ///
-/// The certificate uses the `rcgen` crate and is valid for localhost connections.
-/// Returns a `rustls::ServerConfig` wrapped in an `Arc` suitable for use with `quinn`.
-pub fn generate_self_signed_cert() -> Result<(rustls::ServerConfig, rustls::ClientConfig)> {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-    // Generate a self-signed certificate
-    let cert_params = rcgen::CertificateParams::new(vec!["localhost".to_string()])
-        .context("Failed to create certificate params")?;
-    let key_pair = rcgen::KeyPair::generate().context("Failed to generate key pair")?;
-    let cert = cert_params
-        .self_signed(&key_pair)
-        .context("Failed to self-sign certificate")?;
+/// Client authentication is not required here yet; connections are authorized
+/// by the handshake exchange in [`crate::transport`]. Mutual TLS against the
+/// paired-device store is a separate change.
+pub fn server_tls_config(identity: &DeviceIdentity) -> Result<rustls::ServerConfig> {
+    install_crypto_provider();
 
-    let cert_der = rustls::pki_types::CertificateDer::from(cert.der().to_vec());
-    let key_der =
-        rustls::pki_types::PrivateKeyDer::try_from(key_pair.serialize_der())
-            .map_err(|e| anyhow::anyhow!("Failed to create private key DER: {}", e))?;
-
-    // Build server config
-    let server_config = rustls::ServerConfig::builder()
+    rustls::ServerConfig::builder()
         .with_no_client_auth()
-        .with_single_cert(vec![cert_der.clone()], key_der.clone_key())
-        .context("Failed to build server TLS config")?;
-
-    // Build client config that trusts our self-signed cert
-    let mut root_store = rustls::RootCertStore::empty();
-    root_store
-        .add(cert_der)
-        .context("Failed to add cert to root store")?;
-
-    let client_config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
-
-    Ok((server_config, client_config))
+        .with_single_cert(vec![identity.cert_der().clone()], identity.key_der())
+        .context("Failed to build server TLS config from device identity")
 }
 
-/// Generate quinn-compatible server and client configs from self-signed certs.
-pub fn generate_quinn_configs() -> Result<(quinn::ServerConfig, quinn::ClientConfig)> {
-    let (server_tls, client_tls) = generate_self_signed_cert()?;
+/// Build the rustls client config that pins peers by certificate fingerprint.
+///
+/// The verifier accepts a peer iff its fingerprint is recorded in `trust` (or
+/// `trust` is in pairing mode). No web PKI roots are consulted.
+pub fn client_tls_config(trust: Arc<TrustStore>) -> Result<rustls::ClientConfig> {
+    install_crypto_provider();
 
-    let server_config = quinn::ServerConfig::with_crypto(Arc::new(
-        quinn::crypto::rustls::QuicServerConfig::try_from(server_tls)
+    let config = rustls::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(PinnedFingerprintVerifier::new(trust)))
+        .with_no_client_auth();
+
+    Ok(config)
+}
+
+/// Build a quinn server config from this device's identity.
+pub fn quinn_server_config(identity: &DeviceIdentity) -> Result<quinn::ServerConfig> {
+    let tls = server_tls_config(identity)?;
+    Ok(quinn::ServerConfig::with_crypto(Arc::new(
+        quinn::crypto::rustls::QuicServerConfig::try_from(tls)
             .map_err(|e| anyhow::anyhow!("Failed to create QUIC server config: {}", e))?,
-    ));
+    )))
+}
 
-    let client_config = quinn::ClientConfig::new(Arc::new(
-        quinn::crypto::rustls::QuicClientConfig::try_from(client_tls)
+/// Build a quinn client config that pins peers by certificate fingerprint.
+pub fn quinn_client_config(trust: Arc<TrustStore>) -> Result<quinn::ClientConfig> {
+    let tls = client_tls_config(trust)?;
+    Ok(quinn::ClientConfig::new(Arc::new(
+        quinn::crypto::rustls::QuicClientConfig::try_from(tls)
             .map_err(|e| anyhow::anyhow!("Failed to create QUIC client config: {}", e))?,
-    ));
-
-    Ok((server_config, client_config))
+    )))
 }
 
 /// Placeholder for future X25519 key pair generation.
@@ -147,31 +175,38 @@ mod tests {
 
     #[test]
     fn test_pin_from_str_valid() {
-        let pin = PairingPin::from_str("123456").unwrap();
+        let pin = PairingPin::parse("123456").unwrap();
         assert_eq!(pin.as_str(), "123456");
     }
 
     #[test]
     fn test_pin_from_str_invalid_length() {
-        assert!(PairingPin::from_str("12345").is_err());
-        assert!(PairingPin::from_str("1234567").is_err());
+        assert!(PairingPin::parse("12345").is_err());
+        assert!(PairingPin::parse("1234567").is_err());
     }
 
     #[test]
     fn test_pin_from_str_non_digits() {
-        assert!(PairingPin::from_str("12345a").is_err());
-        assert!(PairingPin::from_str("abcdef").is_err());
+        assert!(PairingPin::parse("12345a").is_err());
+        assert!(PairingPin::parse("abcdef").is_err());
     }
 
     #[test]
     fn test_pin_display() {
-        let pin = PairingPin::from_str("123456").unwrap();
+        let pin = PairingPin::parse("123456").unwrap();
         assert_eq!(format!("{}", pin), "123-456");
     }
 
     #[test]
+    fn test_pin_parses_via_from_str_trait() {
+        let pin: PairingPin = "654321".parse().unwrap();
+        assert_eq!(pin.as_str(), "654321");
+        assert!("nope".parse::<PairingPin>().is_err());
+    }
+
+    #[test]
     fn test_pin_hash_deterministic() {
-        let pin = PairingPin::from_str("000000").unwrap();
+        let pin = PairingPin::parse("000000").unwrap();
         let h1 = pin.hash();
         let h2 = pin.hash();
         assert_eq!(h1, h2);
@@ -180,14 +215,14 @@ mod tests {
 
     #[test]
     fn test_pin_hash_different_pins() {
-        let pin1 = PairingPin::from_str("000000").unwrap();
-        let pin2 = PairingPin::from_str("000001").unwrap();
+        let pin1 = PairingPin::parse("000000").unwrap();
+        let pin2 = PairingPin::parse("000001").unwrap();
         assert_ne!(pin1.hash(), pin2.hash());
     }
 
     #[test]
     fn test_pin_verify_hash() {
-        let pin = PairingPin::from_str("654321").unwrap();
+        let pin = PairingPin::parse("654321").unwrap();
         let hash = pin.hash();
         assert!(pin.verify_hash(&hash));
         assert!(!pin.verify_hash("wrong_hash"));
@@ -197,7 +232,7 @@ mod tests {
     fn test_pin_hash_uses_blake3_not_sha256() {
         // Verify that the hash is BLAKE3 (64 hex chars) and NOT a SHA-256 hash.
         // Both are 64 hex chars, but we verify BLAKE3 by checking against a known value.
-        let pin = PairingPin::from_str("123456").unwrap();
+        let pin = PairingPin::parse("123456").unwrap();
         let hash = pin.hash();
         assert_eq!(hash.len(), 64);
 
@@ -210,19 +245,33 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_self_signed_cert() {
-        let result = generate_self_signed_cert();
-        assert!(result.is_ok(), "Certificate generation failed: {:?}", result.err());
+    fn test_server_tls_config_from_identity() {
+        let identity = DeviceIdentity::generate().unwrap();
+        let result = server_tls_config(&identity);
+        assert!(
+            result.is_ok(),
+            "Server TLS config failed: {:?}",
+            result.err()
+        );
     }
 
     #[test]
-    fn test_generate_quinn_configs() {
-        let result = generate_quinn_configs();
+    fn test_client_tls_config_from_trust_store() {
+        let trust = Arc::new(TrustStore::in_memory());
+        let result = client_tls_config(trust);
         assert!(
             result.is_ok(),
-            "Quinn config generation failed: {:?}",
+            "Client TLS config failed: {:?}",
             result.err()
         );
+    }
+
+    #[test]
+    fn test_quinn_configs_build_from_identity_and_trust() {
+        let identity = DeviceIdentity::generate().unwrap();
+        let trust = Arc::new(TrustStore::in_memory());
+        assert!(quinn_server_config(&identity).is_ok());
+        assert!(quinn_client_config(trust).is_ok());
     }
 
     #[test]
