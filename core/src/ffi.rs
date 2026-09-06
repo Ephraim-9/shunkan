@@ -45,22 +45,22 @@ const PAIRING_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum ShunkanError {
     /// The device identity or trust store could not be read or written.
-    #[error("storage error: {message}")]
+    #[error("storage error: {reason}")]
     Storage {
         /// What went wrong.
-        message: String,
+        reason: String,
     },
     /// The network stack failed to start or a connection failed.
-    #[error("network error: {message}")]
+    #[error("network error: {reason}")]
     Network {
         /// What went wrong.
-        message: String,
+        reason: String,
     },
     /// Pairing was refused: wrong PIN, rate limited, or a relayed channel.
-    #[error("pairing failed: {message}")]
+    #[error("pairing failed: {reason}")]
     Pairing {
         /// What went wrong.
-        message: String,
+        reason: String,
     },
     /// The requested peer is not known or not reachable.
     #[error("no such peer: {peer_id}")]
@@ -72,27 +72,27 @@ pub enum ShunkanError {
     #[error("engine is not running")]
     NotRunning,
     /// The argument was not valid (a malformed PIN, say).
-    #[error("invalid argument: {message}")]
+    #[error("invalid argument: {reason}")]
     InvalidArgument {
         /// What went wrong.
-        message: String,
+        reason: String,
     },
 }
 
 impl ShunkanError {
     fn storage(e: impl std::fmt::Display) -> Self {
         Self::Storage {
-            message: e.to_string(),
+            reason: e.to_string(),
         }
     }
     fn network(e: impl std::fmt::Display) -> Self {
         Self::Network {
-            message: e.to_string(),
+            reason: e.to_string(),
         }
     }
     fn pairing(e: impl std::fmt::Display) -> Self {
         Self::Pairing {
-            message: e.to_string(),
+            reason: e.to_string(),
         }
     }
 }
@@ -278,7 +278,7 @@ impl ShunkanEngine {
     /// The other device must be showing, or be given, the same PIN.
     pub fn begin_pairing(&self, pin: String) -> Result<(), ShunkanError> {
         let pin = PairingPin::parse(pin.trim()).map_err(|e| ShunkanError::InvalidArgument {
-            message: e.to_string(),
+            reason: e.to_string(),
         })?;
         *self.pairing_pin.lock().unwrap_or_else(|e| e.into_inner()) = Some(pin);
         self.trust.set_pairing_mode(true);
