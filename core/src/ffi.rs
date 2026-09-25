@@ -139,7 +139,7 @@ pub trait ShunkanListener: Send + Sync {
     /// A pairing attempt finished.
     fn on_pairing_result(&self, peer_id: String, accepted: bool, reason: Option<String>);
     /// Something went wrong in the background.
-    fn on_error(&self, message: String);
+    fn on_error(&self, reason: String);
 }
 
 /// A connected peer's outbound queue.
@@ -439,10 +439,10 @@ impl ShunkanEngine {
         self.lock_history().push(item);
     }
 
-    fn report_error(&self, message: String) {
-        log::warn!("{}", message);
+    fn report_error(&self, reason: String) {
+        log::warn!("{}", reason);
         if let Some(listener) = self.listener() {
-            listener.on_error(message);
+            listener.on_error(reason);
         }
     }
 
@@ -761,8 +761,8 @@ mod tests {
             *self.peer_changes.lock().unwrap() += 1;
         }
         fn on_pairing_result(&self, _: String, _: bool, _: Option<String>) {}
-        fn on_error(&self, message: String) {
-            self.errors.lock().unwrap().push(message);
+        fn on_error(&self, reason: String) {
+            self.errors.lock().unwrap().push(reason);
         }
     }
 

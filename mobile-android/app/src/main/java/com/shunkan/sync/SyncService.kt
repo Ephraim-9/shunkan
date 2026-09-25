@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.net.wifi.WifiManager
 import android.os.IBinder
 
 /**
@@ -21,6 +22,8 @@ import android.os.IBinder
  */
 class SyncService : Service() {
 
+    private var multicastLock: WifiManager.MulticastLock? = null
+
     override fun onCreate() {
         super.onCreate()
         createChannel()
@@ -28,12 +31,21 @@ class SyncService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
+        
+        val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        multicastLock = wifiManager?.createMulticastLock("shunkan:mdns")
+        multicastLock?.setReferenceCounted(true)
+        multicastLock?.acquire()
+
         EngineHolder.start()
         return START_STICKY
     }
 
     override fun onDestroy() {
         EngineHolder.stop()
+        multicastLock?.let {
+            if (it.isHeld) it.release()
+        }
         super.onDestroy()
     }
 

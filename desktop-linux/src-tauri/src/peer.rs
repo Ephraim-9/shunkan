@@ -381,7 +381,7 @@ pub async fn dial(
     let conn = match client.connect(addr, &server_name).await {
         Ok(conn) => conn,
         Err(e) => {
-            log::warn!("Could not connect to {} at {}: {}", label, addr, e);
+            log::warn!("Could not connect to {} at {}: {:#}", label, addr, e);
             return;
         }
     };
