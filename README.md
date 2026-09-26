@@ -4,10 +4,10 @@
 No cloud, no account, no relay server — devices find each other on the local network and talk
 directly over QUIC.
 
-> **Status:** Discovery, transport, protocol, history and hashing are implemented and covered by
-> 67 unit tests plus 8 integration tests. PIN-pairing verification works; the X25519 key exchange
-> is still a scaffold. The Android client is Gradle scaffolding only — no sources yet, UniFFI
-> bindings unwired. Not packaged for end users.
+> **Status:** 222 tests (203 unit, 19 async/integration). Discovery, QUIC transport, protocol,
+> history, hashing, file-chunk reassembly and SPAKE2 PIN pairing are implemented. The Android client
+> (IME, quick-settings tile, share target) runs on the Rust core through UniFFI. Not packaged for
+> end users.
 
 ## Why
 
@@ -20,18 +20,26 @@ is QUIC with self-signed TLS, and nothing leaves the local network.
 ```
 core/                  shunkan-core — shared Rust engine
   discovery.rs         mDNS-SD broadcast + browse (_shunkan-sync._udp.local.)
-  transport.rs         QUIC transport (quinn) with self-signed rustls certificates
+  transport.rs         QUIC transport (quinn) over rustls
   protocol.rs          wire protocol message types
-  crypto.rs            BLAKE3 PIN-pairing verification (X25519 exchange scaffolded)
+  identity.rs          persistent device identity: peer ID + self-signed TLS certificate
+  pairing.rs           SPAKE2 PIN pairing, bound to both devices' TLS certificate fingerprints
+  trust.rs             paired-device trust store + pinned-fingerprint TLS verifier
+  crypto.rs            pairing PIN type and QUIC/TLS config tying identity to the trust store
+  transfer.rs          file-chunk reassembly by index (tracks missing chunks)
   history.rs           in-memory LRU clipboard history, BLAKE3-deduplicated
   hashing.rs           BLAKE3 chunk hasher for file integrity
+  ffi.rs               UniFFI exports for Android
 
 desktop-linux/         Tauri v2 client (Rust backend + web frontend)
-mobile-android/        Jetpack Compose client (scaffolded)
+mobile-android/        Kotlin client: sync service, IME, quick-settings tile, share target
 ```
 
-One engine, two frontends. The desktop and mobile clients are thin — all networking,
-cryptography, and protocol handling live in `shunkan-core`, exposed to Android via UniFFI.
+One engine, two frontends. The clients are thin — networking, cryptography and protocol handling
+live in `shunkan-core`; Android calls it through UniFFI bindings.
+
+There is no certificate authority: a peer is trusted only if its certificate's BLAKE3 fingerprint
+was recorded in the trust store during PIN pairing.
 
 ## Design invariants
 
@@ -53,7 +61,7 @@ Requires a recent stable Rust toolchain.
 
 ```bash
 cargo build --workspace          # core + desktop backend
-cargo test  -p shunkan-core      # engine tests, including integration
+cargo test  --workspace          # all tests, including integration
 ```
 
 The Linux desktop client additionally needs the [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/):
@@ -64,10 +72,8 @@ cd desktop-linux && cargo tauri dev
 
 ## Roadmap
 
-- [ ] Wire UniFFI bindings and complete the Android client
-- [ ] Replace the X25519 scaffold with a real key exchange
-- [ ] Pairing UX (PIN verification is implemented; no UI yet)
-- [ ] Chunked file transfer resume
+- [ ] Pairing UI on desktop (PIN pairing works in the core; the desktop reads the PIN from an environment variable)
+- [ ] Chunked file transfer resume (reassembly tracks missing chunks; no resume request yet)
 - [ ] Packaging: AppImage / Flatpak for Linux
 
 ## License
